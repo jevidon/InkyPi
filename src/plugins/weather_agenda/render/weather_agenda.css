@@ -1,0 +1,608 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+
+
+/* =========================================================================
+   Outer wrapper: flex column so chart sits at the very bottom full-width
+   ========================================================================= */
+
+.wa-outer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: "Jost";
+  gap: 0;
+}
+
+/* =========================================================================
+   Main row: weather column + divider + agenda column
+   ========================================================================= */
+
+.wa-layout {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  gap: 0;
+  overflow: hidden;
+}
+
+/* =========================================================================
+   LEFT column – weather panel (~55% width)
+   ========================================================================= */
+
+.wa-weather-col {
+  flex: 0 0 55%;
+  max-width: 55%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding-right: 1vw;
+  overflow: hidden;
+  gap: 0.5dvh;
+}
+
+/* --- Header: title + date --- */
+.wa-header {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  container-type: inline-size;
+}
+
+.wa-title {
+  font-size: min(7.8cqi, 9dvh);
+  font-weight: bold;
+  text-align: left;
+  line-height: 110%;
+}
+
+.wa-date {
+  font-size: min(4.8cqi, 5.4dvh);
+  text-align: left;
+  line-height: 115%;
+}
+
+.wa-updated-at {
+  font-size: min(2.4cqi, 3dvh);
+  text-align: left;
+  line-height: 120%;
+  opacity: 0.75;
+}
+
+/* --- Sunrise / Sunset metrics (below header) --- */
+.wa-sun-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3dvh;
+  width: 100%;
+}
+
+.wa-sun-metric {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5vw;
+}
+
+.wa-sun-metric-icon {
+  height: min(3.5dvh, 2.8vw);
+  width: auto;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.wa-sun-metric-label {
+  font-size: min(2dvh, 1.8vw);
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+.wa-sun-metric-value {
+  font-size: min(2.4dvh, 2.2vw);
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+/* --- Current conditions + vertical forecast wrapper --- */
+.wa-current-forecast {
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 1.5vw;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Left side: icon above / temp+metrics at bottom */
+.wa-current-left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 1;
+  min-width: 0;
+  overflow: visible;
+  container-type: size;
+}
+
+/* Temp + metrics bottom row */
+.wa-temp-metrics-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: flex-start;
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.wa-current-icon {
+  height: 55vh;
+  width: auto;
+  object-fit: contain;
+  margin-bottom: -3dvh;
+  align-self: flex-end;
+}
+
+/* Primary temperature */
+.wa-temp {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 0.5vw;
+  font-weight: bold;
+  font-size: min(26dvh, 31vw);
+  flex-shrink: 1;
+  line-height: 100%;
+  margin-left: 2vw;
+}
+
+.wa-temp-main {
+  line-height: 0.76;
+}
+
+.wa-temp-main--narrow {
+  padding-left: 0.08em;
+}
+
+.wa-temp-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-end;
+  line-height: 1;
+  padding-bottom: 0;
+  gap: 0.02em;
+}
+
+.wa-temp-secondary {
+  font-size: 0.22em;
+  font-weight: normal;
+  opacity: 0.55;
+  white-space: nowrap;
+}
+
+.wa-temp-unit {
+  font-size: 0.4em;
+  font-weight: normal;
+}
+
+.wa-feels-like {
+  font-size: min(2.5dvh, 2.2vw);
+  line-height: 140%;
+}
+
+/* Precip centered below the temp/H/L block */
+.wa-precip-center {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5vw;
+  font-size: min(2.5dvh, 2.2vw);
+  font-weight: bold;
+  width: 100%;
+  white-space: nowrap;
+}
+
+.wa-precip-value {
+  font-size: min(2.5dvh, 2.2vw);
+  font-weight: bold;
+}
+
+/* --- Metrics rows --- */
+.wa-metrics-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 1vw;
+  flex-shrink: 0;
+  overflow: visible;
+  margin-left: -2vw;
+}
+
+/* Each metric: icon left, label+value stacked right */
+.wa-data-point {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5vw;
+  overflow: visible;
+  min-width: 0;
+}
+
+.wa-dp-icon {
+  height: min(5dvh, 3.5vw);
+  width: auto;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.wa-dp-text {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.wa-dp-label {
+  font-size: min(1.8dvh, 1.5vw);
+  opacity: 0.6;
+  white-space: nowrap;
+  line-height: 120%;
+}
+
+.wa-dp-value {
+  font-size: min(2.8dvh, 2.4vw);
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 120%;
+}
+
+.wa-dp-unit {
+  font-size: 0.75em;
+  font-weight: normal;
+  opacity: 0.8;
+}
+
+/* =========================================================================
+   DIVIDER
+   ========================================================================= */
+
+.wa-divider {
+  flex: 0 0 1px;
+  background-color: currentColor;
+  opacity: 0.25;
+  margin: 1dvh 0.8vw;
+  align-self: stretch;
+}
+
+/* =========================================================================
+   RIGHT column – agenda panel
+   ========================================================================= */
+
+.wa-agenda-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding-left: 1vw;
+  overflow: hidden;
+  gap: 1dvh;
+  min-width: 0;
+}
+
+/* --- Day group --- */
+.wa-agenda-day {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  border: 1px solid currentColor;
+  border-radius: 1.2vw;
+  padding: 0.5dvh 0.8vw;
+}
+
+.wa-agenda-day-header {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.8vw;
+  width: 100%;
+  padding-bottom: 0.2dvh;
+  margin-bottom: 0.2dvh;
+  border-bottom: 1px solid currentColor;
+}
+
+.wa-agenda-day-label {
+  font-size: min(2.4dvh, 2.4vw);
+  font-weight: bold;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  line-height: 120%;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
+.wa-agenda-day-hl {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.4vw;
+  flex-shrink: 0;
+}
+
+.wa-agenda-day-body {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0.4vw;
+  width: 100%;
+  min-height: 14dvh;
+  flex: 1;
+}
+
+.wa-agenda-day-events {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15dvh;
+  min-width: 0;
+  justify-content: flex-start;
+}
+
+.wa-agenda-day-wx {
+  position: relative;
+  flex: 0 0 auto;
+  width: 33%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4dvh;
+  padding-left: 0.6vw;
+  border-left: 1px solid currentColor;
+  border-left-color: rgba(0, 0, 0, 0.15);
+}
+
+.wa-agenda-day-wx > .wa-wx-icon,
+.wa-agenda-day-wx > .wa-wx-icon-wrap {
+  position: absolute;
+  right: 0.2vw;
+  bottom: -0.2vw;
+  height: min(8dvh, 6vw);
+  width: auto;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.wa-wx-icon {
+  height: min(5.5dvh, 4vw);
+  width: auto;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.wa-wx-hl-item {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.15vw;
+  white-space: nowrap;
+}
+
+.wa-wx-hl-alt {
+  font-size: min(1.5dvh, 1.25vw);
+  opacity: 0.6;
+  margin-left: 0.15vw;
+}
+
+.wa-wx-metrics {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 0.5vw;
+  row-gap: 0.2dvh;
+  align-items: center;
+}
+
+.wa-wx-row {
+  display: contents;
+}
+
+.wa-wx-metric-icon {
+  height: min(2.4dvh, 2vw);
+  width: min(2.4dvh, 2vw);
+  object-fit: contain;
+  justify-self: center;
+}
+
+.wa-wx-arrow {
+  font-size: min(2.2dvh, 1.8vw);
+  line-height: 1;
+  font-weight: bold;
+}
+
+.wa-wx-arrow-up   { color: #dc2626; }
+.wa-wx-arrow-down { color: #2563eb; }
+
+.wa-wx-value {
+  font-size: min(2dvh, 1.7vw);
+  font-weight: bold;
+  white-space: nowrap;
+  line-height: 120%;
+}
+
+.wa-wx-rain-amount {
+  font-size: 0.85em;
+  font-weight: normal;
+  opacity: 0.65;
+  margin-left: 0.4vw;
+}
+
+/* --- Individual event row --- */
+.wa-agenda-event {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.6vw;
+  padding: 0.15dvh 0 0.15dvh 0.6vw;
+  border-left: 3px solid;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.wa-event-time {
+  font-size: min(1.9dvh, 1.8vw);
+  white-space: nowrap;
+  flex-shrink: 0;
+  opacity: 0.75;
+  min-width: 6vw;
+}
+
+.wa-event-title {
+  font-size: min(2dvh, 1.9vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.wa-no-events {
+  font-size: min(2dvh, 1.9vw);
+  opacity: 0.45;
+  padding-left: 0.6vw;
+  font-style: italic;
+}
+
+.wa-agenda-empty {
+  font-size: min(2.2dvh, 2.2vw);
+  opacity: 0.5;
+  font-style: italic;
+  margin-top: 1dvh;
+}
+
+/* Expanded agenda cards (fewer visible → more vertical space) */
+.wa-agenda-day--expanded .wa-agenda-day-wx { gap: 0.6dvh; }
+.wa-agenda-day--expanded .wa-wx-metrics { row-gap: 0.6dvh; }
+
+/* =========================================================================
+   CHART: pinned to the bottom of wa-weather-col (left column only)
+   ========================================================================= */
+
+.wa-chart-container {
+  position: relative;
+  width: 100%;
+  height: 31dvh;
+  flex-shrink: 0;
+}
+
+.wa-sun-events {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.wa-sun-event {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2dvh;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.wa-sun-event img {
+  height: min(3dvh, 2.4vw);
+  width: auto;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.wa-sun-event-time {
+  font-size: min(1.4dvh, 1.2vw);
+  font-weight: bold;
+}
+
+/* =========================================================================
+   Portrait / tall screens
+   ========================================================================= */
+
+@media (max-aspect-ratio: 1) {
+  .wa-layout {
+    flex-direction: column;
+  }
+
+  .wa-weather-col {
+    flex: 0 0 auto;
+    max-width: 100%;
+    width: 100%;
+    padding-right: 0;
+  }
+
+  .wa-divider {
+    width: 100%;
+    height: 1px;
+    margin: 0.5dvh 0;
+  }
+
+  .wa-agenda-col {
+    flex: 1;
+    width: 100%;
+    padding-left: 0;
+  }
+
+  .wa-current-forecast {
+    flex-direction: column;
+  }
+
+  .wa-forecast-vertical {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 1.5dvw;
+  }
+
+  .wa-current-icon {
+    max-height: 12dvh;
+  }
+
+  .wa-agenda-day-body {
+    flex-direction: row;
+  }
+
+  .wa-agenda-day-wx {
+    width: 34%;
+  }
+}
+
+/* =========================================================================
+   Very small / pixel-art displays
+   ========================================================================= */
+
+@media (max-width: 250px) {
+  .wa-outer {
+    font-family: "Dogica";
+  }
+}

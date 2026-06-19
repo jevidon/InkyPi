@@ -1,0 +1,5 @@
+{
+    "display_name": "Weather + Agenda",
+    "id": "weather_agenda",
+    "class": "WeatherAgenda"
+}

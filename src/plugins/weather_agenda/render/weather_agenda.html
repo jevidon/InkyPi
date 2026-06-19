@@ -1,0 +1,549 @@
+{% extends "plugin.html" %}
+
+{% block content %}
+<div id="units-container" data-units="{{ units }}"></div>
+
+<div class="wa-outer">
+
+  {% if plugin_settings.wireframeMode == "true" %}
+  <style>
+    /* Shared label base */
+    .wa-outer::before, .wa-layout::before, .wa-weather-col::before,
+    .wa-header::before, .wa-current-forecast::before, .wa-current-left::before,
+    .wa-metrics-row::before, .wa-temp-icon-block::before, .wa-temp-icon-row::before,
+    .wa-temp::before, .wa-agenda-col::before, .wa-agenda-day::before,
+    .wa-agenda-day-body::before, .wa-agenda-day-events::before,
+    .wa-agenda-day-wx::before, .wa-agenda-event::before,
+    .wa-wx-icon-wrap::before, .wa-wx-row::before,
+    .wa-chart-container::before {
+      font-size: 8px;
+      font-family: monospace;
+      font-weight: bold;
+      padding: 1px 3px;
+      position: absolute;
+      z-index: 100;
+      line-height: 1;
+      pointer-events: none;
+      opacity: 0.9;
+      white-space: nowrap;
+    }
+
+    /* Corner distribution to reduce overlap (TL / TR / BL / BR) */
+    .wa-outer            { outline: 3px solid red;         position: relative; }
+    .wa-outer::before    { content: "wa-outer";            background: red;         color: #fff; top: 0; left: 0; }
+
+    .wa-layout           { outline: 3px solid orange;      position: relative; }
+    .wa-layout::before   { content: "wa-layout";           background: orange;      color: #000; top: 0; right: 0; }
+
+    .wa-weather-col      { background: rgba(255,200,0,0.08); outline: 2px dashed goldenrod; position: relative; }
+    .wa-weather-col::before { content: "wa-weather-col";   background: goldenrod;   color: #000; bottom: 0; left: 0; }
+
+    .wa-header           { background: rgba(0,128,255,0.10); outline: 2px dashed dodgerblue; position: relative; }
+    .wa-header::before   { content: "wa-header";           background: dodgerblue;  color: #fff; top: 0; right: 0; }
+
+    .wa-current-forecast { background: rgba(180,0,255,0.06); outline: 2px dashed mediumpurple; position: relative; }
+    .wa-current-forecast::before { content: "wa-current-forecast"; background: mediumpurple; color: #fff; bottom: 0; right: 0; }
+
+    .wa-current-left     { background: rgba(255,0,128,0.07); outline: 2px dashed hotpink; position: relative; }
+    .wa-current-left::before { content: "wa-current-left"; background: hotpink;     color: #000; top: 12px; left: 0; }
+
+    .wa-metrics-row      { background: rgba(0,200,100,0.10); outline: 2px dashed mediumseagreen; position: relative; }
+    .wa-metrics-row::before { content: "wa-metrics-row";   background: mediumseagreen; color: #fff; top: 0; right: 0; }
+
+    .wa-temp-icon-block  { outline: 1px dashed plum;       position: relative; }
+    .wa-temp-icon-block::before { content: "wa-temp-icon-block"; background: plum;  color: #000; top: 0; left: 0; }
+
+    .wa-temp-icon-row    { outline: 1px dashed violet;     position: relative; }
+    .wa-temp-icon-row::before { content: "wa-temp-icon-row"; background: violet;   color: #000; bottom: 0; left: 0; }
+
+    .wa-temp             { outline: 1px dotted crimson;    position: relative; }
+    .wa-temp::before     { content: "wa-temp";             background: crimson;     color: #fff; top: 0; right: 0; }
+
+    .wa-agenda-col       { background: rgba(255,100,0,0.07); outline: 2px dashed darkorange; position: relative; }
+    .wa-agenda-col::before { content: "wa-agenda-col";     background: darkorange;  color: #fff; top: 12px; right: 0; }
+
+    .wa-agenda-day       { outline: 1px dotted darkorange; position: relative; }
+    .wa-agenda-day::before { content: "wa-agenda-day";     background: darkorange;  color: #fff; top: 0; right: 0; }
+
+    .wa-agenda-day-body  { outline: 1px dashed chocolate;  position: relative; }
+    .wa-agenda-day-body::before { content: "wa-agenda-day-body"; background: chocolate; color: #fff; bottom: 0; right: 0; }
+
+    .wa-agenda-day-events { outline: 1px dotted sienna;    position: relative; }
+    .wa-agenda-day-events::before { content: "wa-agenda-day-events"; background: sienna; color: #fff; bottom: 0; left: 0; }
+
+    .wa-agenda-day-wx    { outline: 1px dashed peru;       position: relative; }
+    .wa-agenda-day-wx::before { content: "wa-agenda-day-wx"; background: peru; color: #000; top: 0; left: 0; }
+
+    .wa-agenda-event     { outline: 1px dotted coral;      position: relative; }
+    .wa-agenda-event::before { content: "wa-agenda-event"; background: coral;       color: #000; top: 0; right: 0; }
+
+    .wa-wx-icon-wrap     { outline: 1px dotted teal;       position: relative; }
+    .wa-wx-icon-wrap::before { content: "wa-wx-icon"; background: teal; color: #fff; bottom: 0; left: 0; }
+
+    .wa-wx-row           { outline: 1px dotted cadetblue;  position: relative; }
+    .wa-wx-row::before   { content: "wx-row"; background: cadetblue; color: #fff; top: 0; right: 0; }
+
+    .wa-chart-container  { background: rgba(0,100,0,0.08); outline: 2px dashed green; position: relative; }
+    .wa-chart-container::before { content: "wa-chart-container"; background: green; color: #fff; top: 0; left: 0; }
+
+    /* Icon filename captions via data-dbg on parent containers */
+    [data-dbg]::after {
+      content: attr(data-dbg);
+      position: absolute;
+      z-index: 200;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 8px;
+      font-family: monospace;
+      font-weight: bold;
+      color: #8b0000;
+      background: rgba(255, 255, 0, 0.75);
+      padding: 1px 2px;
+      line-height: 1;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+  </style>
+  {% endif %}
+
+  <div class="wa-layout">
+
+    <!-- ===== LEFT: Weather Column ===== -->
+    <div class="wa-weather-col">
+
+      <!-- Header -->
+      <div class="wa-header">
+        <div class="wa-title">{{ current_date }}</div>
+        <div class="wa-date">{{ title }}</div>
+        {% if updated_at_text %}<div class="wa-updated-at">{{ updated_at_text }}</div>{% endif %}
+      </div>
+
+      {% if sun_metrics %}
+      <div class="wa-sun-metrics">
+        {% for dp in sun_metrics %}
+        <div class="wa-sun-metric">
+          <img class="wa-sun-metric-icon" src="{{ dp.icon }}" alt="{{ dp.label }}">
+          <span class="wa-sun-metric-label">{{ dp.label }}</span>
+          <span class="wa-sun-metric-value">{{ dp.measurement }}{% if dp.unit %} {{ dp.unit }}{% endif %}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <!-- Current conditions + vertical 2-day forecast -->
+      <div class="wa-current-forecast">
+
+        <!-- Left: icon above / temp+metrics bottom row -->
+        <div class="wa-current-left" {% if plugin_settings.wireframeMode == "true" %}data-dbg="{{ current_day_icon.split('/') | last }}"{% endif %}>
+
+          <img class="wa-current-icon" src="{{ current_day_icon }}" alt="Current weather icon">
+
+          <div class="wa-temp-metrics-row">
+            <div class="wa-temp">
+              <span class="wa-temp-main{% if current_temperature[0] in '1-' %} wa-temp-main--narrow{% endif %}">{{ current_temperature }}</span>
+              <span class="wa-temp-side">
+                {% if plugin_settings.showSecondaryTemp == "true" %}<span class="wa-temp-secondary">({{ current_temperature_alt }}{{ temperature_unit_alt }})</span>{% endif %}
+                <span class="wa-temp-unit">{{ temperature_unit }}</span>
+              </span>
+            </div>
+
+            {% if metrics_below %}
+            <div class="wa-metrics-row">
+              {% for dp in metrics_below %}
+              <div class="wa-data-point" {% if plugin_settings.wireframeMode == "true" %}data-dbg="{{ dp.icon.split('/') | last }}"{% endif %}>
+                <img class="wa-dp-icon" src="{{ dp.icon }}" alt="{{ dp.label }}">
+                <div class="wa-dp-text">
+                  <div class="wa-dp-label">{{ dp.label }}</div>
+                  <div class="wa-dp-value">{{ dp.measurement }}{% if dp.unit %}<span class="wa-dp-unit"> {{ dp.unit }}</span>{% endif %}{% if dp.label == "Wind" %} {{ dp.arrow }}{% endif %}</div>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </div>
+
+        </div><!-- end wa-current-left -->
+
+      </div><!-- end wa-current-forecast -->
+
+    </div><!-- end wa-weather-col -->
+
+<!-- ===== RIGHT: Agenda Column ===== -->
+    <div class="wa-agenda-col">
+
+      {% if agenda_events %}
+        {% for day_group in agenda_events %}
+          <div class="wa-agenda-day">
+
+            <div class="wa-agenda-day-body">
+
+              <div class="wa-agenda-day-events">
+                <div class="wa-agenda-day-header">
+                  <div class="wa-agenda-day-label">{{ day_group.label }}</div>
+                  {% if day_group.forecast %}
+                  <div class="wa-agenda-day-hl">
+                    <div class="wa-wx-hl-item">
+                      <span class="wa-wx-arrow wa-wx-arrow-down">▼</span>
+                      <span class="wa-wx-value">{{ day_group.forecast.low }}{% if units != "standard" %}{{ temperature_unit }}{% endif %}</span>
+                      {% if plugin_settings.showSecondaryTemp == "true" %}<span class="wa-wx-hl-alt">({{ day_group.forecast.low_alt }}{{ day_group.forecast.alt_unit }})</span>{% endif %}
+                    </div>
+                    <div class="wa-wx-hl-item">
+                      <span class="wa-wx-arrow wa-wx-arrow-up">▲</span>
+                      <span class="wa-wx-value">{{ day_group.forecast.high }}{% if units != "standard" %}{{ temperature_unit }}{% endif %}</span>
+                      {% if plugin_settings.showSecondaryTemp == "true" %}<span class="wa-wx-hl-alt">({{ day_group.forecast.high_alt }}{{ day_group.forecast.alt_unit }})</span>{% endif %}
+                    </div>
+                  </div>
+                  {% endif %}
+                </div>
+                {% if day_group.events %}
+                  {% for event in day_group.events %}
+                  <div class="wa-agenda-event" style="border-left-color: {{ event.color }};">
+                    <span class="wa-event-time">{{ event.time }}</span>
+                    <span class="wa-event-title">{{ event.title }}</span>
+                  </div>
+                  {% endfor %}
+                {% else %}
+                  <div class="wa-no-events">No events</div>
+                {% endif %}
+              </div>
+
+              {% if day_group.forecast %}
+              <div class="wa-agenda-day-wx" {% if plugin_settings.wireframeMode == "true" %}data-dbg="{{ day_group.forecast.icon.split('/') | last }}"{% endif %}>
+                <div class="wa-wx-metrics">
+                  <div class="wa-wx-row" {% if plugin_settings.wireframeMode == "true" %}data-dbg="{{ agenda_wx_icons.precip.split('/') | last }}"{% endif %}>
+                    <img class="wa-wx-metric-icon" src="{{ agenda_wx_icons.precip }}" alt="Precip">
+                    <span class="wa-wx-value">{{ day_group.forecast.rain_pct }}%{% if day_group.forecast.rain_amount %} <span class="wa-wx-rain-amount">{{ day_group.forecast.rain_amount }} {{ day_group.forecast.rain_unit }}</span>{% endif %}</span>
+                  </div>
+                  <div class="wa-wx-row" {% if plugin_settings.wireframeMode == "true" %}data-dbg="{{ agenda_wx_icons.wind.split('/') | last }}"{% endif %}>
+                    <img class="wa-wx-metric-icon" src="{{ agenda_wx_icons.wind }}" alt="Wind">
+                    <span class="wa-wx-value">{{ day_group.forecast.wind_speed }} {{ day_group.forecast.wind_unit | replace("km/h", "kph") }}</span>
+                  </div>
+                  <div class="wa-wx-row" {% if plugin_settings.wireframeMode == "true" %}data-dbg="{{ agenda_wx_icons.uvi.split('/') | last }}"{% endif %}>
+                    <img class="wa-wx-metric-icon" src="{{ agenda_wx_icons.uvi }}" alt="UV">
+                    <span class="wa-wx-value">{{ day_group.forecast.uvi }}</span>
+                  </div>
+                </div>
+                <img class="wa-wx-icon" src="{{ day_group.forecast.icon }}" alt="">
+              </div>
+              {% endif %}
+
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="wa-agenda-empty">No calendars configured.</div>
+      {% endif %}
+
+    </div><!-- end wa-agenda-col -->
+
+  </div><!-- end wa-layout -->
+
+  <!-- ===== CHART: Full-width, under both columns ===== -->
+  {% if plugin_settings.displayGraph == "true" %}
+  <div class="wa-chart-container">
+    {% if plugin_settings.displayGraphSunEvents == "true" and sun_events %}
+    <div class="wa-sun-events">
+      {% for evt in sun_events %}
+      <div class="wa-sun-event wa-sun-event-{{ evt.type }}" data-hour-offset="{{ evt.hour_offset }}">
+        <img src="{{ evt.icon }}" alt="{{ evt.type }}">
+        <span class="wa-sun-event-time">{{ evt.time }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <canvas id="hourlyTemperatureChart"></canvas>
+  </div>
+  {% endif %}
+
+</div><!-- end wa-outer -->
+
+<script src="{{ static_dir }}/scripts/chart.js" charset="UTF-8"></script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  function trimOverflowingAgendaDays() {
+    const col = document.querySelector('.wa-agenda-col');
+    if (!col) return;
+    const colBottom = col.getBoundingClientRect().bottom;
+    let anyHidden = false;
+    col.querySelectorAll('.wa-agenda-day').forEach(card => {
+      card.style.display = '';
+      card.style.flexGrow = '';
+      if (card.getBoundingClientRect().bottom > colBottom + 0.5) {
+        card.style.display = 'none';
+        anyHidden = true;
+      }
+    });
+    if (anyHidden) {
+      col.querySelectorAll('.wa-agenda-day').forEach(card => {
+        if (card.style.display !== 'none') {
+          card.style.flexGrow = '1';
+          card.classList.add('wa-agenda-day--expanded');
+        }
+      });
+    }
+  }
+  requestAnimationFrame(trimOverflowingAgendaDays);
+
+  {% if plugin_settings.displayGraph == "true" %}
+  const canvas = document.getElementById('hourlyTemperatureChart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  const labels        = [{% for h in hourly_forecast %}"{{ h.time }}"{% if not loop.last %}, {% endif %}{% endfor %}];
+  const temperatures  = [{% for h in hourly_forecast %}{{ h.temperature }}{% if not loop.last %}, {% endif %}{% endfor %}];
+  const precipitation = [{% for h in hourly_forecast %}{{ h.precipitation * 100 }}{% if not loop.last %}, {% endif %}{% endfor %}];
+  const rain          = [{% for h in hourly_forecast %}{{ h.rain or 0 }}{% if not loop.last %}, {% endif %}{% endfor %}];
+  const uvIndex       = [{% for h in hourly_forecast %}{{ h.uv_index or 0 }}{% if not loop.last %}, {% endif %}{% endfor %}];
+  const iconPaths     = [{% for h in hourly_forecast %}"{{ h.icon | replace('\\', '/') }}"{% if not loop.last %}, {% endif %}{% endfor %}];
+  const iconStep      = parseInt("{{ plugin_settings.graphIconStep or 2 }}");
+  const units         = document.getElementById('units-container').dataset.units;
+  const isImperial    = units === "imperial";
+  const rainUnit      = isImperial ? "in" : "mm";
+  const threshold     = isImperial ? 0.0035 : 0.09;
+
+  const minTemp = Math.min(...temperatures);
+  const maxTemp = Math.max(...temperatures);
+
+  function uvColor(uv) {
+    if (uv >= 11) return '#a855f7';
+    if (uv >= 8)  return '#ef4444';
+    if (uv >= 6)  return '#f97316';
+    if (uv >= 3)  return '#eab308';
+    return '#22c55e';
+  }
+
+  const rainMax = Math.max(...rain);
+  const y1Max   = Math.max(rainMax, isImperial ? 0.1 : 2.5);
+
+  // Edge bars are centered on the chart's left/right extents and get clipped
+  // in half. Hide them so the chart doesn't show chopped-off rain bars.
+  if (rain.length) {
+    rain[0] = null;
+    rain[rain.length - 1] = null;
+  }
+
+  Chart.register({
+    id: 'annotationRain',
+    afterDatasetsDraw(chart, args, pluginOptions) {
+      const { ctx } = chart;
+      const rainData = pluginOptions.precipitationData || [];
+      const meta = chart.getDatasetMeta(1);
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.font = '18px Jost';
+      meta.data.forEach((bar, i) => {
+        const amount = rainData[i];
+        if (amount && amount > threshold) {
+          const x = bar.x;
+          const chartTop = chart.chartArea.top;
+          let textY = bar.y - 22;
+          let unitY  = bar.y - 5;
+          if (textY < chartTop) {
+            textY = chartTop + 3;
+            unitY = chartTop + 20;
+          }
+          ctx.fillStyle = "{{ plugin_settings.textColor }}";
+          ctx.fillText(amount.toFixed(2), x, textY);
+          ctx.fillText(rainUnit, x, unitY);
+        }
+      });
+      ctx.restore();
+    }
+  });
+
+  {% if plugin_settings.displayGraphIcons == "true" %}
+  Chart.register({
+    id: 'chartIcons',
+    afterDatasetsDraw(chart) {
+      const { ctx, chartArea: { bottom }, scales: { x } } = chart;
+      const iconSize = 31;
+      ctx.save();
+      chart.getDatasetMeta(0).data.forEach((point, i) => {
+        if (i === 0 || i % iconStep !== 0) return;
+        const img = new Image();
+        img.src = iconPaths[i];
+        const xPos = point.x - (iconSize / 2);
+        const yPos = bottom + 25;
+        if (img.complete) ctx.drawImage(img, xPos, yPos, iconSize, iconSize);
+        else img.onload = () => ctx.drawImage(img, xPos, yPos, iconSize, iconSize);
+      });
+      ctx.restore();
+    }
+  });
+  {% endif %}
+
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          type: 'line',
+          label: 'Hourly Temperature',
+          data: temperatures,
+          borderColor: 'rgba(241, 122, 36, 0.9)',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: true,
+          clip: false,
+          tension: 0.5
+        },
+        {
+          type: 'bar',
+          label: 'Precipitation Amount',
+          data: rain,
+          borderColor: 'rgba(26, 111, 176, 1)',
+          borderWidth: { top: 2, right: 0, bottom: 0, left: 0 },
+          yAxisID: 'y1',
+          barPercentage: 1.0,
+          categoryPercentage: 1.0,
+          fill: true,
+        },
+        {
+          type: 'line',
+          label: 'UV Index',
+          data: uvIndex,
+          yAxisID: 'y2',
+          borderWidth: 0,
+          pointRadius: 0,
+          fill: true,
+          tension: 0.4,
+        }
+      ]
+    },
+    options: {
+      layout: {
+        padding: {
+          top:    {% if plugin_settings.displayGraphIcons == "true" %}12{% else %}8{% endif %}{% if plugin_settings.displayGraphSunEvents == "true" and sun_events %} + 26{% endif %},
+          bottom: {% if plugin_settings.displayGraphIcons == "true" %}18{% else %}0{% endif %}
+        }
+      },
+      animation: { duration: 0 },
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          ticks: {
+            autoSkip: false, padding: 10,
+            maxRotation: 0, minRotation: 0,
+            color: "{{ plugin_settings.textColor }}",
+            font: { family: 'Jost', size: 14 },
+            callback: function(value, index, values) {
+              if (index === 0 || index === values.length - 1) return '';
+              if (index % iconStep !== 0) return '';
+              return this.getLabelForValue(value);
+            }
+          },
+          grid: { tickLength: 0, display: false },
+          offset: false
+        },
+        y: {
+          ticks: {
+            padding: 5,
+            color: "{{ plugin_settings.textColor }}",
+            font: { family: 'Jost', size: 18 },
+            autoSkip: false,
+            callback: function(value, index, values) {
+              if (index === values.length - 1) return (units !== "standard") ? maxTemp + "°" : maxTemp;
+              if (index === 0) return (units !== "standard") ? minTemp + "°" : minTemp;
+              return '';
+            }
+          },
+          grid: { display: false },
+          min: minTemp,
+          max: maxTemp,
+        },
+        y1: {
+          position: 'right',
+          grid: { display: false },
+          ticks: {
+            padding: 0,
+            color: "{{ plugin_settings.textColor }}",
+            font: { family: 'Jost' },
+            autoSkip: false,
+            callback: function() { return ''; }
+          },
+          min: 0,
+          max: y1Max,
+        },
+        y2: {
+          position: 'left',
+          grid: { display: false },
+          border: { display: false },
+          ticks: {
+            display: false,
+          },
+          min: 0,
+          max: 11,
+        }
+      },
+      plugins: {
+        legend: { display: false },
+        {% if plugin_settings.displayRain == "true" %}
+        annotationRain: { precipitationData: rain }
+        {% endif %}
+      },
+      elements: { line: { borderJoinStyle: 'round' } }
+    }
+  });
+
+  chart.update();
+
+  const gradientStart = chart.scales['y'].getPixelForValue(maxTemp);
+  const gradientEnd   = chart.scales['y'].getPixelForValue(minTemp);
+
+  const tempGradient = ctx.createLinearGradient(0, gradientStart, 0, gradientEnd + 10);
+  tempGradient.addColorStop(0, 'rgba(252, 204, 5, 0.95)');
+  tempGradient.addColorStop(1, 'rgba(252, 204, 5, 0.01)');
+  chart.data.datasets[0].backgroundColor = tempGradient;
+
+  const precipTop    = chart.scales['y1'].getPixelForValue(y1Max);
+  const precipBottom = chart.scales['y1'].getPixelForValue(0);
+  const precipGradient = ctx.createLinearGradient(0, precipTop, 0, precipBottom);
+  precipGradient.addColorStop(0, 'rgba(26, 111, 176, 0.8)');
+  precipGradient.addColorStop(1, 'rgba(194, 223, 246, 0.15)');
+  chart.data.datasets[1].backgroundColor = precipGradient;
+
+  const uvTop    = chart.scales['y2'].getPixelForValue(11);
+  const uvBottom = chart.scales['y2'].getPixelForValue(0);
+  const uvGradient = ctx.createLinearGradient(0, uvTop, 0, uvBottom);
+  uvGradient.addColorStop(0,      'rgba(168,  85, 247, 0.8)');  // 11 — Extreme (purple)
+  uvGradient.addColorStop(3/11,   'rgba(239,  68,  68, 0.8)');  //  8 — Very High (red)
+  uvGradient.addColorStop(5/11,   'rgba(249, 115,  22, 0.8)');  //  6 — High (orange)
+  uvGradient.addColorStop(8/11,   'rgba(234, 179,   8, 0.8)');  //  3 — Moderate (yellow)
+  uvGradient.addColorStop(9/11,   'rgba( 34, 197,  94, 0.8)');  //  2 — Low (green)
+  uvGradient.addColorStop(1,      'rgba( 34, 197,  94, 0)');    //  0 — transparent
+  chart.data.datasets[2].backgroundColor = uvGradient;
+
+  chart.update();
+
+  function positionSunEvents() {
+    const els = document.querySelectorAll('.wa-sun-event');
+    if (!els.length || !chart.scales || !chart.scales.x || !chart.scales.y) return;
+    const xScale = chart.scales.x;
+    const yScale = chart.scales.y;
+    const lastIndex = labels.length - 1;
+    if (lastIndex < 0) return;
+    const yFontSize = (yScale.options.ticks && yScale.options.ticks.font && yScale.options.ticks.font.size) || 18;
+    const topOffset = yScale.getPixelForValue(yScale.max) - yFontSize / 2;
+    els.forEach(el => {
+      const offset = parseFloat(el.dataset.hourOffset);
+      if (isNaN(offset)) return;
+      const clamped = Math.max(0, Math.min(lastIndex, offset));
+      const lo = Math.floor(clamped);
+      const hi = Math.min(lastIndex, lo + 1);
+      const frac = clamped - lo;
+      const xLo = xScale.getPixelForValue(lo);
+      const xHi = xScale.getPixelForValue(hi);
+      el.style.left = `${xLo + (xHi - xLo) * frac}px`;
+      el.style.top = `${topOffset}px`;
+    });
+  }
+  positionSunEvents();
+  window.addEventListener('resize', positionSunEvents);
+  {% endif %}
+});
+</script>
+{% endblock %}

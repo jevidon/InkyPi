@@ -1,0 +1,288 @@
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+<!-- ===== WEATHER SETTINGS ===== -->
+<div class="form-group">
+    <label class="form-label">Location:</label>
+    <div class="form-group">
+        <span>Latitude</span>
+        <input readonly type="text" id="latitude" name="latitude" class="form-input" />
+    </div>
+    <div class="form-group">
+        <span>Longitude</span>
+        <input readonly type="text" id="longitude" name="longitude" class="form-input" />
+    </div>
+    <button type="button" id="openMap" class="action-button compact">Select Location</button>
+</div>
+
+<div class="form-group">
+    <label for="weatherProvider" class="form-label">Weather Provider:</label>
+    <select id="weatherProvider" name="weatherProvider" class="form-input" onchange="updateWeatherProviderUI(this.value)">
+        <option value="OpenMeteo">Open-Meteo</option>
+        <option value="OpenWeatherMap">OpenWeatherMap</option>
+    </select>
+
+    <label for="units" class="form-label">Units:</label>
+    <select id="units" name="units" class="form-input">
+        <option value="imperial">Imperial (°F)</option>
+        <option value="metric">Metric (°C)</option>
+        <option value="standard">Standard (K)</option>
+    </select>
+</div>
+
+<div class="form-group" id="titleOptionWrapper">
+    <label class="form-label">Title:</label>
+    <div class="form-group">
+        <input type="radio" id="title-location" name="titleSelection" value="location">
+        <label for="title-location">Location</label>
+        <input type="radio" id="title-custom" name="titleSelection" value="custom">
+        <label for="title-custom">Custom</label>
+        <input type="text" id="customTitle" name="customTitle" class="form-input" placeholder="Type something..." />
+    </div>
+</div>
+
+<div class="form-group">
+    <label class="form-label">Display:</label>
+
+    <div class="form-group">
+        <input type="checkbox" id="displayUpdatedAt" name="displayUpdatedAt" onclick="this.value=this.checked ? 'true' : 'false';">
+        <span>Updated At (alongside date)</span>
+    </div>
+
+    <div class="form-group">
+        <input type="checkbox" id="displayGraph" name="displayGraph" onclick="this.value=this.checked ? 'true' : 'false';">
+        <span>Weather Graph</span>
+    </div>
+
+    <div class="form-group">
+        <input type="checkbox" id="displayRain" name="displayRain" onclick="this.value=this.checked ? 'true' : 'false';">
+        <span>Rain Amount</span>
+    </div>
+
+    <div class="form-group">
+        <input type="checkbox" id="displayGraphSunEvents" name="displayGraphSunEvents" onclick="this.value=this.checked ? 'true' : 'false';">
+        <span>Sunrise/Sunset on Graph</span>
+    </div>
+
+    <div class="form-group">
+        <input type="checkbox" id="displayGraphIcons" name="displayGraphIcons" onclick="this.value=this.checked ? 'true' : 'false';">
+        <span>Graph icons every</span>
+        <select id="graphIconStep" name="graphIconStep" class="form-input">
+            <option value="1">1</option>
+            <option value="2" selected>2</option>
+            <option value="4">4</option>
+            <option value="6">6</option>
+            <option value="12">12</option>
+        </select>
+        <span>hours</span>
+    </div>
+
+    <div class="form-group">
+        <input type="hidden" id="showSecondaryTempValue" name="showSecondaryTemp" value="false">
+        <input type="checkbox" id="showSecondaryTemp" onclick="document.getElementById('showSecondaryTempValue').value = this.checked ? 'true' : 'false';">
+        <span>Secondary Temps (alt unit for H/L and forecast)</span>
+    </div>
+
+    <div class="form-group">
+        <input type="checkbox" id="wireframeMode" name="wireframeMode" onclick="this.value=this.checked ? 'true' : 'false';">
+        <span>Wireframe Mode (debug layout)</span>
+    </div>
+
+    <div class="form-group">
+        <label for="weatherTimeZone" class="form-label">Time Zone:</label>
+        <select id="weatherTimeZone" name="weatherTimeZone" class="form-input">
+            <option value="locationTimeZone">Use Location Time Zone</option>
+            <option value="localTimeZone">Use Local Time Zone</option>
+        </select>
+    </div>
+</div>
+
+<!-- ===== CALENDAR / AGENDA SETTINGS ===== -->
+<div class="form-group">
+    <label class="form-label">Calendars:</label>
+    <div id="calendarList"></div>
+    <button type="button" id="addCalendarBtn" class="form-input collapsible" onclick="addCalendarInput('', '#007BFF')">Add Calendar</button>
+</div>
+
+<!-- Location map modal -->
+<div id="mapModal" class="modal">
+    <div class="modal-content">
+        <span class="close-button" onclick="closeModal('mapModal')">×</span>
+        <h2 id="modalTitle">Select Location</h2>
+        <div class="separator"></div>
+        <div id="map" style="width: 100%; height: 200px; margin: 10px 0;"></div>
+        <button id="closeMap" class="action-button">Save</button>
+    </div>
+</div>
+
+<script>
+    function updateWeatherProviderUI(provider) {
+        const titleLocationRadio = document.getElementById('title-location');
+        const titleLocationLabel = document.querySelector('label[for="title-location"]');
+        const titleCustomRadio   = document.getElementById('title-custom');
+        const customTitleInput   = document.getElementById('customTitle');
+        const tzSelect           = document.getElementById('weatherTimeZone');
+        const tzLabel            = document.querySelector('label[for="weatherTimeZone"]');
+        const apiKeyLabel        = document.querySelector('.api-key-label');
+
+        if (provider === 'OpenMeteo') {
+            titleLocationRadio.style.display = 'none';
+            titleLocationLabel.style.display = 'none';
+            titleLocationRadio.disabled = true;
+            tzSelect.style.display = 'none';
+            if (tzLabel) tzLabel.style.display = 'none';
+            tzSelect.disabled = true;
+            titleCustomRadio.checked = true;
+            titleCustomRadio.disabled = false;
+            customTitleInput.disabled = false;
+            if (apiKeyLabel) apiKeyLabel.style.display = 'none';
+        } else {
+            titleLocationRadio.style.display = '';
+            titleLocationLabel.style.display = '';
+            titleLocationRadio.disabled = false;
+            tzSelect.style.display = '';
+            if (tzLabel) tzLabel.style.display = '';
+            tzSelect.disabled = false;
+            titleCustomRadio.disabled = false;
+            customTitleInput.disabled = false;
+            if (apiKeyLabel) apiKeyLabel.style.display = '';
+        }
+    }
+
+    function addCalendarInput(url, color) {
+        const calendarList = document.getElementById('calendarList');
+
+        const wrapper = document.createElement('div');
+        wrapper.classList.add('calendar-entry', 'form-group');
+
+        const colorInput = document.createElement('input');
+        colorInput.type = 'color';
+        colorInput.name = 'calendarColors[]';
+        colorInput.classList.add('color-picker');
+        colorInput.value = color || '#007BFF';
+
+        const urlInput = document.createElement('input');
+        urlInput.type = 'text';
+        urlInput.name = 'calendarURLs[]';
+        urlInput.placeholder = 'Calendar URL';
+        urlInput.required = true;
+        urlInput.classList.add('form-input');
+        urlInput.value = url || '';
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.innerText = '✕';
+        removeBtn.classList.add('remove-btn');
+        removeBtn.onclick = () => wrapper.remove();
+
+        wrapper.appendChild(colorInput);
+        wrapper.appendChild(urlInput);
+        wrapper.appendChild(removeBtn);
+        calendarList.appendChild(wrapper);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const $latitude  = document.querySelector('#latitude');
+        const $longitude = document.querySelector('#longitude');
+        const $openMap   = document.querySelector('#openMap');
+        const $closeMap  = document.querySelector('#closeMap');
+
+        let latitude  = +$latitude.value;
+        let longitude = +$longitude.value;
+        let zoom      = latitude && longitude ? 4.5 : 2.5;
+        let selectedTitle    = 'location';
+        let weatherProvider  = 'OpenMeteo';
+
+        let map, marker;
+
+        $openMap.addEventListener('click', () => {
+            openModal('mapModal');
+            setTimeout(() => {
+                if (!map) {
+                    map = L.map('map').setView([latitude, longitude], zoom);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+                    marker = L.marker([latitude, longitude], { draggable: true }).addTo(map);
+                    map.on('click', event => marker.setLatLng(event.latlng));
+                }
+            }, 100);
+        });
+
+        $closeMap.addEventListener('click', () => {
+            const position = marker.getLatLng().wrap();
+            $latitude.value  = position.lat;
+            $longitude.value = position.lng;
+            closeModal('mapModal');
+        });
+
+        if (loadPluginSettings) {
+            // Weather
+            document.getElementById('latitude').value  = pluginSettings.latitude  || '';
+            document.getElementById('longitude').value = pluginSettings.longitude || '';
+            document.getElementById('units').value = pluginSettings.units || 'imperial';
+
+            document.getElementById('displayUpdatedAt').checked = pluginSettings.displayUpdatedAt === 'true';
+            document.getElementById('displayUpdatedAt').value   = pluginSettings.displayUpdatedAt || 'false';
+
+            document.getElementById('displayGraph').checked = pluginSettings.displayGraph === 'true';
+            document.getElementById('displayGraph').value   = pluginSettings.displayGraph || 'false';
+
+            document.getElementById('displayRain').checked = pluginSettings.displayRain === 'true';
+            document.getElementById('displayRain').value   = pluginSettings.displayRain || 'false';
+
+            document.getElementById('displayGraphSunEvents').checked = pluginSettings.displayGraphSunEvents === 'true';
+            document.getElementById('displayGraphSunEvents').value   = pluginSettings.displayGraphSunEvents || 'false';
+
+            document.getElementById('displayGraphIcons').checked = pluginSettings.displayGraphIcons === 'true';
+            document.getElementById('displayGraphIcons').value   = pluginSettings.displayGraphIcons || 'false';
+
+            document.getElementById('graphIconStep').value = pluginSettings.graphIconStep || '2';
+
+            const showSecondaryTempChecked = pluginSettings.showSecondaryTemp !== 'false';
+            document.getElementById('showSecondaryTemp').checked = showSecondaryTempChecked;
+            document.getElementById('showSecondaryTempValue').value = showSecondaryTempChecked ? 'true' : 'false';
+
+            document.getElementById('wireframeMode').checked = pluginSettings.wireframeMode === 'true';
+            document.getElementById('wireframeMode').value   = pluginSettings.wireframeMode || 'false';
+
+            document.getElementById('weatherTimeZone').value = pluginSettings.weatherTimeZone || 'locationTimeZone';
+
+            selectedTitle   = pluginSettings.titleSelection || 'location';
+            weatherProvider = pluginSettings.weatherProvider || 'OpenMeteo';
+            document.getElementById('customTitle').value = pluginSettings.customTitle || '';
+
+            // Calendar
+            const calUrls   = pluginSettings["calendarURLs[]"];
+            const calColors = pluginSettings["calendarColors[]"];
+            if (calUrls) {
+                const urls   = Array.isArray(calUrls)   ? calUrls   : [calUrls];
+                const colors = Array.isArray(calColors) ? calColors : [calColors];
+                urls.forEach((url, i) => addCalendarInput(url, colors[i] || '#007BFF'));
+            }
+
+        } else {
+            // Defaults
+            document.getElementById('units').value = 'imperial';
+            document.getElementById('displayUpdatedAt').checked = false;
+            document.getElementById('displayUpdatedAt').value   = 'false';
+            document.getElementById('displayGraph').checked = true;
+            document.getElementById('displayGraph').value   = 'true';
+            document.getElementById('displayRain').checked = false;
+            document.getElementById('displayRain').value   = 'false';
+            document.getElementById('displayGraphSunEvents').checked = true;
+            document.getElementById('displayGraphSunEvents').value   = 'true';
+            document.getElementById('displayGraphIcons').checked = false;
+            document.getElementById('displayGraphIcons').value   = 'false';
+            document.getElementById('showSecondaryTemp').checked = true;
+            document.getElementById('showSecondaryTemp').value   = 'true';
+            document.getElementById('wireframeMode').checked = false;
+            document.getElementById('wireframeMode').value   = 'false';
+            document.getElementById('weatherTimeZone').value = 'locationTimeZone';
+            addCalendarInput('', '#007BFF');
+        }
+
+        document.getElementById('weatherProvider').value = weatherProvider;
+        const radioEl = document.querySelector(`input[name="titleSelection"][value="${selectedTitle}"]`);
+        if (radioEl) radioEl.checked = true;
+        updateWeatherProviderUI(weatherProvider);
+    });
+</script>

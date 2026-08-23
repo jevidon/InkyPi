@@ -42,6 +42,38 @@ def get_current_image():
     return response
 
 
+@main_bp.route('/api/current_data')
+def get_current_data():
+    """Serve the data bundle behind the current image.
+
+    The JSON written by DisplayManager.save_data_bundle — the template
+    params of the most recent render, plus plugin_id and generated_at —
+    with the same If-Modified-Since support as /api/current_image, so
+    external consumers can re-render the information natively.
+    """
+    data_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'static', 'images', 'current_data.json')
+
+    if not os.path.exists(data_path):
+        return jsonify({"error": "Data not found"}), 404
+
+    file_mtime = int(os.path.getmtime(data_path))
+    last_modified = datetime.fromtimestamp(file_mtime)
+
+    if_modified_since = request.headers.get('If-Modified-Since')
+    if if_modified_since:
+        try:
+            client_mtime = datetime.strptime(if_modified_since, '%a, %d %b %Y %H:%M:%S %Z')
+            if file_mtime <= int(client_mtime.timestamp()):
+                return '', 304
+        except (ValueError, AttributeError):
+            pass
+
+    response = send_file(data_path, mimetype='application/json')
+    response.headers['Last-Modified'] = last_modified.strftime('%a, %d %b %Y %H:%M:%S GMT')
+    response.headers['Cache-Control'] = 'no-cache'
+    return response
+
+
 @main_bp.route('/api/plugin_order', methods=['POST'])
 def save_plugin_order():
     """Save the custom plugin order."""

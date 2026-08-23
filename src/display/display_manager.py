@@ -82,3 +82,28 @@ class DisplayManager:
 
         # Pass to the concrete instance to render to the device.
         self.display.display_image(image, image_settings)
+
+    def save_data_bundle(self, plugin):
+        """Persist the data behind the displayed image as JSON.
+
+        Writes the plugin's template params (snapshotted by
+        BasePlugin.render_image) next to current_image.png so external
+        consumers can re-render the same information natively via
+        /api/current_data instead of scraping pixels. Values that aren't
+        JSON-native (datetimes, etc.) are stringified. Best-effort — a
+        failure here must never break a display refresh.
+        """
+        try:
+            data = getattr(plugin, "latest_data", None)
+            if data is None:
+                return
+            from datetime import datetime, timezone
+            bundle = {
+                "plugin_id": plugin.get_plugin_id(),
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "data": data,
+            }
+            with open(self.device_config.current_data_file, "w") as f:
+                json.dump(bundle, f, default=str)
+        except Exception:
+            logger.exception("Failed to save current data bundle")

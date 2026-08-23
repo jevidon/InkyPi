@@ -16,6 +16,13 @@ class Config:
     # File path for storing the current image being displayed
     current_image_file = os.path.join(BASE_DIR, "static", "images", "current_image.png")
 
+    # File path for the data bundle behind the current image — the template
+    # params of the most recent render, saved as JSON so external consumers
+    # (e.g. other dashboards on the network) can re-render the same
+    # information natively instead of scraping pixels. Served at
+    # /api/current_data.
+    current_data_file = os.path.join(BASE_DIR, "static", "images", "current_data.json")
+
     # Directory path for storing plugin instance images
     plugin_image_dir = os.path.join(BASE_DIR, "static", "images", "plugins")
 

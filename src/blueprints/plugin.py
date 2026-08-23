@@ -250,6 +250,7 @@ def update_now():
             plugin = get_plugin_instance(plugin_config)
             image = plugin.generate_image(plugin_settings, device_config)
             display_manager.display_image(image, image_settings=plugin_config.get("image_settings", []))
+            display_manager.save_data_bundle(plugin)
 
     except Exception as e:
         logger.exception(f"Error in update_now: {str(e)}")

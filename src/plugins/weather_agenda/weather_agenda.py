@@ -772,7 +772,7 @@ class WeatherAgenda(BasePlugin):
         add("Precip", today_pop, "%", "09d.png")
 
         current_uvi = weather.get("current", {}).get("uvi")
-        add("Current UV", round(current_uvi) if current_uvi is not None else "N/A", "", "uvi.png")
+        add("Current UV", f"{current_uvi:.1f}" if current_uvi is not None else "N/A", "", "uvi.png")
 
 
         return data_points
@@ -990,7 +990,7 @@ class WeatherAgenda(BasePlugin):
         add("Precip", precip_chance, "%", "09d.png")
 
         current_uv = current_data.get("uv_index")
-        add("Current UV", round(current_uv) if current_uv is not None else "N/A", "", "uvi.png")
+        add("Current UV", f"{current_uv:.1f}" if current_uv is not None else "N/A", "", "uvi.png")
 
 
         return data_points

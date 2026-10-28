@@ -197,7 +197,7 @@ class WeatherAgenda(BasePlugin):
         template_params["metrics_below"] = [data_points_by_label[l] for l in below_labels if l in data_points_by_label]
 
         # --- Sunrise / sunset / current UV for the header area ---
-        sun_labels = ["Sunrise", "Current UV", "Sunset"]
+        sun_labels = ["Sunrise", "Sunset", "Current UV"]
         template_params["sun_metrics"] = [data_points_by_label[l] for l in sun_labels if l in data_points_by_label]
 
         # --- Dimensions & render ---

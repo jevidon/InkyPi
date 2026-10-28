@@ -69,7 +69,7 @@ OPEN_METEO_FORECAST_URL = (
     "&daily=weathercode,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max,uv_index_max"
     ",wind_speed_10m_max,wind_direction_10m_dominant,precipitation_sum"
     "&current=temperature,windspeed,winddirection,is_day,precipitation"
-    ",weather_code,apparent_temperature"
+    ",weather_code,apparent_temperature,uv_index"
     "&timezone={timezone}&models=best_match&forecast_days={forecast_days}"
 )
 OPEN_METEO_AIR_QUALITY_URL = (
@@ -196,8 +196,8 @@ class WeatherAgenda(BasePlugin):
         below_labels = []
         template_params["metrics_below"] = [data_points_by_label[l] for l in below_labels if l in data_points_by_label]
 
-        # --- Sunrise / sunset / peak UV for the header area ---
-        sun_labels = ["Sunrise", "Peak UV", "Sunset"]
+        # --- Sunrise / sunset / current UV for the header area ---
+        sun_labels = ["Sunrise", "Current UV", "Sunset"]
         template_params["sun_metrics"] = [data_points_by_label[l] for l in sun_labels if l in data_points_by_label]
 
         # --- Dimensions & render ---
@@ -771,8 +771,8 @@ class WeatherAgenda(BasePlugin):
         today_pop = round(daily_list[0].get("pop", 0) * 100) if daily_list else 0
         add("Precip", today_pop, "%", "09d.png")
 
-        peak_uvi = daily_list[0].get("uvi") if daily_list else weather.get("current", {}).get("uvi")
-        add("Peak UV", round(peak_uvi) if peak_uvi is not None else "N/A", "", "uvi.png")
+        current_uvi = weather.get("current", {}).get("uvi")
+        add("Current UV", round(current_uvi) if current_uvi is not None else "N/A", "", "uvi.png")
 
 
         return data_points
@@ -989,9 +989,8 @@ class WeatherAgenda(BasePlugin):
         precip_chance = int(pop_max_list[0]) if pop_max_list else 0
         add("Precip", precip_chance, "%", "09d.png")
 
-        uv_max_list = daily_data.get("uv_index_max", [])
-        peak_uv = round(uv_max_list[0]) if uv_max_list else "N/A"
-        add("Peak UV", peak_uv, "", "uvi.png")
+        current_uv = current_data.get("uv_index")
+        add("Current UV", round(current_uv) if current_uv is not None else "N/A", "", "uvi.png")
 
 
         return data_points

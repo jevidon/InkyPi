@@ -319,7 +319,6 @@ document.addEventListener("DOMContentLoaded", function () {
   // Scale: 0 to the next multiple of 20 at or above the peak. Its ends are not written on screen.
   const windMax  = Math.max(20, Math.ceil(peakGust / 20) * 20);
   const windUnit = isImperial ? "mph" : "kph";
-  const WIND_BAR_WIDTH = 50;
 
   // Wind is drawn in the text colour at reduced strength so it recedes behind the weather.
   function withAlpha(color, alpha) {
@@ -435,36 +434,42 @@ document.addEventListener("DOMContentLoaded", function () {
   if (showWind) {
     Chart.register({
       id: 'windLabels',
-      // Peak gust and peak wind in the right-hand bar, level with the peaks on the plot.
+      // Peak gust and peak wind beside the left axis, between the temperature labels and level
+      // with the peaks on the plot.
       afterDraw(chart) {
         const s = chart.scales.yw;
         if (!s) return;
-        const { ctx } = chart;
-        // Keep the two labels (number plus unit) clear of each other and inside the plot's height.
-        let gy = Math.max(s.getPixelForValue(peakGust), s.top);
-        let wy = Math.max(s.getPixelForValue(peakWind), hasGust ? gy + 38 : s.top);
-        wy = Math.min(wy, s.bottom - 18);
+        const { ctx, chartArea } = chart;
+        // Each label is a number with its unit underneath. Keep the two clear of each other and of
+        // the temperature labels at the top and bottom of the axis.
+        const highest = chartArea.top + 20;
+        const lowest  = chartArea.bottom - 34;
+        let gy = Math.max(s.getPixelForValue(peakGust), highest);
+        let wy = Math.max(s.getPixelForValue(peakWind), hasGust ? gy + 38 : highest);
+        wy = Math.min(wy, lowest);
         gy = Math.min(gy, wy - 38);
         const marks = [[wy, peakWind, []]];
         if (hasGust) marks.unshift([gy, peakGust, [4, 3]]);
         ctx.save();
         ctx.strokeStyle = windLine;
         ctx.lineWidth = 2.5;
-        ctx.textAlign = 'left';
+        ctx.textAlign = 'right';
+        const axis = chartArea.left;
         marks.forEach(([y, value, dash]) => {
+          // Short marker against the axis: dashed for gusts, solid for wind.
           ctx.setLineDash(dash);
           ctx.beginPath();
-          ctx.moveTo(s.left + 1, y);
-          ctx.lineTo(s.left + 12, y);
+          ctx.moveTo(axis - 12, y);
+          ctx.lineTo(axis - 1, y);
           ctx.stroke();
           ctx.setLineDash([]);
           ctx.fillStyle = windInk;
           ctx.font = '600 17px Jost';
           ctx.textBaseline = 'middle';
-          ctx.fillText(String(value), s.left + 16, y + 1);
+          ctx.fillText(String(value), axis - 16, y + 1);
           ctx.font = '13px Jost';
           ctx.textBaseline = 'top';
-          ctx.fillText(windUnit, s.left + 16, y + 10);
+          ctx.fillText(windUnit, axis - 16, y + 10);
         });
         ctx.restore();
       }
@@ -554,7 +559,6 @@ document.addEventListener("DOMContentLoaded", function () {
           max: maxTemp,
         },
         y1: {
-          display: !showWind,
           position: 'right',
           grid: { display: false },
           ticks: {
@@ -578,11 +582,9 @@ document.addEventListener("DOMContentLoaded", function () {
           max: 11,
         },
         ...(!showWind ? {} : {
+          // Hidden scale for the wind lines; it takes no room, so the plot keeps its full width.
           yw: {
-            position: 'right',
-            afterFit(scale) { scale.width = WIND_BAR_WIDTH; },
-            grid: { display: false, drawTicks: false },
-            ticks: { display: false },
+            display: false,
             min: 0,
             max: windMax,
           }

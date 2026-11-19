@@ -82,6 +82,10 @@ OPEN_METEO_UNIT_PARAMS = {
     "metric":   "temperature_unit=celsius&wind_speed_unit=kmh&precipitation_unit=mm",
     "imperial": "temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch",
 }
+# (connect, read) seconds. urllib3 performs the TLS handshake inside connect(),
+# so a server that accepts TCP but never completes TLS is cut off by the
+# connect value; the read value bounds each wait for response data.
+OPEN_METEO_TIMEOUT = (5, 10)
 
 
 # ---------------------------------------------------------------------------
@@ -128,6 +132,7 @@ class WeatherAgenda(BasePlugin):
         tz = pytz.timezone(timezone_name)
 
         # --- Fetch & parse weather ---
+        backup_source = None
         try:
             if weather_provider == "OpenWeatherMap":
                 api_key = device_config.load_env_key("OPEN_WEATHER_MAP_SECRET")
@@ -143,15 +148,22 @@ class WeatherAgenda(BasePlugin):
                 else:
                     template_params = self._parse_owm_data(weather_data, aqi_data, tz, units, time_format, lat)
             elif weather_provider == "OpenMeteo":
-                weather_data = self._get_open_meteo_data(lat, long, units, 8, timezone_name)
-                aqi_data = self._get_open_meteo_air_quality(lat, long, timezone_name)
-                template_params = self._parse_open_meteo_data(weather_data, aqi_data, tz, units, time_format, lat)
+                try:
+                    weather_data = self._get_open_meteo_data(lat, long, units, 8, timezone_name)
+                    aqi_data = self._get_open_meteo_air_quality(lat, long, timezone_name)
+                    template_params = self._parse_open_meteo_data(weather_data, aqi_data, tz, units, time_format, lat)
+                except Exception as e:
+                    template_params = self._get_owm_fallback(e, device_config, units, lat, long, tz, time_format)
+                    backup_source = "OpenWeatherMap"
             else:
                 raise RuntimeError(f"Unknown weather provider: {weather_provider}")
             template_params["title"] = title
         except Exception as e:
             logger.error(f"{weather_provider} request failed: {str(e)}")
             raise RuntimeError(f"{weather_provider} request failure, please check logs.")
+        # Provider name shown in the header's "backup source" tag; None when
+        # the configured provider was used.
+        template_params["backup_source"] = backup_source
 
         # --- Fetch & parse calendar ---
         calendar_urls = settings.get("calendarURLs[]", [])
@@ -465,7 +477,7 @@ class WeatherAgenda(BasePlugin):
             lat=lat, long=long, forecast_days=forecast_days,
             timezone=url_quote(timezone_name, safe=""),
         ) + f"&{unit_params}"
-        response = requests.get(url, timeout=30)
+        response = requests.get(url, timeout=OPEN_METEO_TIMEOUT)
         if not 200 <= response.status_code < 300:
             logger.error(f"Failed to retrieve Open-Meteo data: {response.content}")
             raise RuntimeError("Failed to retrieve Open-Meteo weather data.")
@@ -475,11 +487,32 @@ class WeatherAgenda(BasePlugin):
         url = OPEN_METEO_AIR_QUALITY_URL.format(
             lat=lat, long=long, timezone=url_quote(timezone_name, safe=""),
         )
-        response = requests.get(url, timeout=30)
+        response = requests.get(url, timeout=OPEN_METEO_TIMEOUT)
         if not 200 <= response.status_code < 300:
             logger.error(f"Failed to retrieve Open-Meteo air quality: {response.content}")
             raise RuntimeError("Failed to retrieve Open-Meteo air quality data.")
         return response.json()
+
+    def _get_owm_fallback(self, error, device_config, units, lat, long, tz, time_format):
+        """Return OpenWeatherMap template params after an Open-Meteo failure.
+
+        Uses the device timezone and leaves the title alone so the screen
+        looks as it does under Open-Meteo. `units` is passed through
+        unchanged: both parsers display standard as Kelvin, metric as °C.
+        Raises if no OpenWeatherMap key is configured or it fails too.
+        """
+        api_key = device_config.load_env_key("OPEN_WEATHER_MAP_SECRET")
+        if not api_key:
+            raise RuntimeError(f"{error} (no OpenWeatherMap API key configured for fallback)") from error
+        logger.warning(f"OpenMeteo request failed: {error}. Falling back to OpenWeatherMap.")
+        try:
+            weather_data = self._get_weather_data(api_key, units, lat, long)
+            aqi_data = self._get_air_quality(api_key, lat, long)
+            return self._parse_owm_data(weather_data, aqi_data, tz, units, time_format, lat)
+        except Exception as owm_error:
+            raise RuntimeError(
+                f"{error}; fallback to OpenWeatherMap also failed: {owm_error}"
+            ) from owm_error
 
     # ==================================================================
     # Weather parsing helpers
@@ -733,7 +766,7 @@ class WeatherAgenda(BasePlugin):
                 "temperature": int(hour.get("temp")),
                 "precipitation": hour.get("pop"),
                 "rain": round(precip_value, 2),
-                "uv_index": 0,
+                "uv_index": round(hour.get("uvi", 0), 1),
                 "icon": self.get_plugin_dir(f"icons/{icon_name}.png"),
             })
         return hourly

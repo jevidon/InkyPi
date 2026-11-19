@@ -299,12 +299,69 @@ document.addEventListener("DOMContentLoaded", function () {
   const precipitation = [{% for h in hourly_forecast %}{{ h.precipitation * 100 }}{% if not loop.last %}, {% endif %}{% endfor %}];
   const rain          = [{% for h in hourly_forecast %}{{ h.rain or 0 }}{% if not loop.last %}, {% endif %}{% endfor %}];
   const uvIndex       = [{% for h in hourly_forecast %}{{ h.uv_index or 0 }}{% if not loop.last %}, {% endif %}{% endfor %}];
+  const windRaw       = [{% for h in hourly_forecast %}{{ h.wind_speed if h.wind_speed is number else 'null' }}{% if not loop.last %}, {% endif %}{% endfor %}];
+  const gustRaw       = [{% for h in hourly_forecast %}{{ h.wind_gust if h.wind_gust is number else 'null' }}{% if not loop.last %}, {% endif %}{% endfor %}];
   const iconPaths     = [{% for h in hourly_forecast %}"{{ h.icon | replace('\\', '/') }}"{% if not loop.last %}, {% endif %}{% endfor %}];
   const iconStep      = parseInt("{{ plugin_settings.graphIconStep or 2 }}");
   const units         = document.getElementById('units-container').dataset.units;
   const isImperial    = units === "imperial";
   const rainUnit      = isImperial ? "in" : "mm";
   const threshold     = isImperial ? 0.0035 : 0.09;
+
+  // --- Wind and gusts (optional): a shaded range between the wind line and the gust line ---
+  const isNum    = v => typeof v === 'number';
+  const showWind = "{{ plugin_settings.displayGraphWind }}" === "true" && windRaw.some(isNum);
+  const hasGust  = showWind && gustRaw.some(isNum);
+  // Where an hour has no gust reading the range closes onto the wind line; gusts never dip below wind.
+  const gusts    = gustRaw.map((g, i) => isNum(g) ? (isNum(windRaw[i]) ? Math.max(g, windRaw[i]) : g) : windRaw[i]);
+  const peakWind = showWind ? Math.max(...windRaw.filter(isNum)) : 0;
+  const peakGust = hasGust ? Math.max(...gusts.filter(isNum)) : peakWind;
+  // Scale: 0 to the next multiple of 20 at or above the peak. Its ends are not written on screen.
+  const windMax  = Math.max(20, Math.ceil(peakGust / 20) * 20);
+  const windUnit = isImperial ? "mph" : "kph";
+  const WIND_BAR_WIDTH = 50;
+
+  // Wind is drawn in the text colour at reduced strength so it recedes behind the weather.
+  function withAlpha(color, alpha) {
+    const probe = document.createElement('canvas').getContext('2d');
+    probe.fillStyle = '#000000';
+    probe.fillStyle = color;
+    const hex = probe.fillStyle;
+    if (!/^#[0-9a-f]{6}$/i.test(hex)) return color;
+    const n = parseInt(hex.slice(1), 16);
+    return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+  }
+  const windLine = withAlpha("{{ plugin_settings.textColor }}", 0.4);
+  const windFill = withAlpha("{{ plugin_settings.textColor }}", 0.09);
+  const windInk  = withAlpha("{{ plugin_settings.textColor }}", 0.67);
+  const windDatasets = !showWind ? [] : [
+    {
+      type: 'line',
+      label: 'Wind',
+      data: windRaw,
+      yAxisID: 'yw',
+      order: -1,
+      borderColor: windLine,
+      borderWidth: 3,
+      pointRadius: 0,
+      fill: false,
+      tension: 0.4,
+    },
+    ...(!hasGust ? [] : [{
+      type: 'line',
+      label: 'Gusts',
+      data: gusts,
+      yAxisID: 'yw',
+      order: -1,
+      borderColor: windLine,
+      borderWidth: 2.5,
+      borderDash: [9, 7],
+      pointRadius: 0,
+      fill: '-1',
+      backgroundColor: windFill,
+      tension: 0.4,
+    }]),
+  ];
 
   const minTemp = Math.min(...temperatures);
   const maxTemp = Math.max(...temperatures);
@@ -377,6 +434,68 @@ document.addEventListener("DOMContentLoaded", function () {
   });
   {% endif %}
 
+  if (showWind) {
+    Chart.register({
+      id: 'windLabels',
+      // "wind" / "gusts" at the right-hand end of each line.
+      afterDatasetsDraw(chart) {
+        const { ctx, chartArea } = chart;
+        const name = (text, datasetIndex, above) => {
+          const points = chart.getDatasetMeta(datasetIndex).data;
+          const last = points[points.length - 1];
+          if (!last || !isNum(last.y)) return;
+          const y = above ? Math.max(last.y - 5, chartArea.top + 20) : Math.min(last.y + 5, chartArea.bottom - 20);
+          ctx.save();
+          ctx.font = '500 15px Jost';
+          ctx.textAlign = 'right';
+          ctx.textBaseline = above ? 'bottom' : 'top';
+          ctx.lineJoin = 'round';
+          ctx.lineWidth = 5;
+          ctx.strokeStyle = "{{ plugin_settings.backgroundColor }}" || '#ffffff';
+          ctx.strokeText(text, chartArea.right - 8, y);
+          ctx.fillStyle = windInk;
+          ctx.fillText(text, chartArea.right - 8, y);
+          ctx.restore();
+        };
+        if (hasGust) name('gusts', 4, true);
+        name('wind', 3, false);
+      },
+      // Peak gust and peak wind in the right-hand bar, level with the peaks on the plot.
+      afterDraw(chart) {
+        const s = chart.scales.yw;
+        if (!s) return;
+        const { ctx } = chart;
+        // Keep the two labels (number plus unit) clear of each other and inside the plot's height.
+        let gy = Math.max(s.getPixelForValue(peakGust), s.top);
+        let wy = Math.max(s.getPixelForValue(peakWind), hasGust ? gy + 38 : s.top);
+        wy = Math.min(wy, s.bottom - 18);
+        gy = Math.min(gy, wy - 38);
+        const marks = [[wy, peakWind, []]];
+        if (hasGust) marks.unshift([gy, peakGust, [4, 3]]);
+        ctx.save();
+        ctx.strokeStyle = windLine;
+        ctx.lineWidth = 2.5;
+        ctx.textAlign = 'left';
+        marks.forEach(([y, value, dash]) => {
+          ctx.setLineDash(dash);
+          ctx.beginPath();
+          ctx.moveTo(s.left + 1, y);
+          ctx.lineTo(s.left + 12, y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = windInk;
+          ctx.font = '600 17px Jost';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(String(value), s.left + 16, y + 1);
+          ctx.font = '13px Jost';
+          ctx.textBaseline = 'top';
+          ctx.fillText(windUnit, s.left + 16, y + 10);
+        });
+        ctx.restore();
+      }
+    });
+  }
+
   const chart = new Chart(ctx, {
     type: 'line',
     data: {
@@ -413,7 +532,8 @@ document.addEventListener("DOMContentLoaded", function () {
           pointRadius: 0,
           fill: true,
           tension: 0.4,
-        }
+        },
+        ...windDatasets
       ]
     },
     options: {
@@ -459,6 +579,7 @@ document.addEventListener("DOMContentLoaded", function () {
           max: maxTemp,
         },
         y1: {
+          display: !showWind,
           position: 'right',
           grid: { display: false },
           ticks: {
@@ -480,7 +601,17 @@ document.addEventListener("DOMContentLoaded", function () {
           },
           min: 0,
           max: 11,
-        }
+        },
+        ...(!showWind ? {} : {
+          yw: {
+            position: 'right',
+            afterFit(scale) { scale.width = WIND_BAR_WIDTH; },
+            grid: { display: false, drawTicks: false },
+            ticks: { display: false },
+            min: 0,
+            max: windMax,
+          }
+        })
       },
       plugins: {
         legend: { display: false },

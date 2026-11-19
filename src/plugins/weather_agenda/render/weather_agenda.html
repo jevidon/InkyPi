@@ -116,7 +116,10 @@
       <div class="wa-header">
         <div class="wa-title">{{ current_date }}</div>
         <div class="wa-date">{{ title }}</div>
-        {% if updated_at_text %}<div class="wa-updated-at">{{ updated_at_text }}</div>{% endif %}
+        {% if updated_at_text or backup_source %}<div class="wa-updated-at">
+          {%- if updated_at_text %}<span class="wa-updated-at-text">{{ updated_at_text }}</span>{% endif -%}
+          {%- if backup_source %}<span class="wa-backup-tag">Backup source</span><span class="wa-backup-source">{{ backup_source }}</span>{% endif -%}
+        </div>{% endif %}
       </div>
 
       {% if sun_metrics %}

@@ -66,6 +66,7 @@ OPEN_METEO_FORECAST_URL = (
     "?latitude={lat}&longitude={long}"
     "&hourly=weather_code,temperature_2m,precipitation,precipitation_probability"
     ",relative_humidity_2m,surface_pressure,visibility,uv_index"
+    ",wind_speed_10m,wind_gusts_10m"
     "&daily=weathercode,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max,uv_index_max"
     ",wind_speed_10m_max,wind_direction_10m_dominant,precipitation_sum"
     "&current=temperature,windspeed,winddirection,is_day,precipitation"
@@ -728,9 +729,13 @@ class WeatherAgenda(BasePlugin):
             icon_base = raw_icon[:2]
             icon_name = f"{icon_base}{suffix}" if icon_base in icon_codes_preserve else f"{icon_base}d"
             precip_value = (total_precip_mm / 25.4) if units == "imperial" else total_precip_mm
+            # OpenWeatherMap reports wind in m/s unless imperial; the display uses km/h.
+            wind_factor = 1 if units == "imperial" else 3.6
             hourly.append({
                 "time": self._format_time(dt, time_format, hour_only=True),
                 "temperature": int(hour.get("temp")),
+                "wind_speed": self._hourly_wind(hour.get("wind_speed"), wind_factor),
+                "wind_gust": self._hourly_wind(hour.get("wind_gust"), wind_factor),
                 "precipitation": hour.get("pop"),
                 "rain": round(precip_value, 2),
                 "uv_index": 0,
@@ -900,6 +905,13 @@ class WeatherAgenda(BasePlugin):
                 continue
         return 0
 
+    @staticmethod
+    def _hourly_wind(value, factor=1):
+        """Round an hourly wind reading for the chart; None when the provider has none."""
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        return round(value * factor)
+
     def _parse_open_meteo_hourly(self, hourly_data, units, tz, time_format, sunrises, sunsets):
         hourly = []
         times = hourly_data.get("time", [])
@@ -919,6 +931,9 @@ class WeatherAgenda(BasePlugin):
         start_index = self._open_meteo_hourly_start_index(times, tz)
 
         uv_index = hourly_data.get("uv_index", [])
+        # Already in km/h or mph, as requested through OPEN_METEO_UNIT_PARAMS.
+        wind_speeds = hourly_data.get("wind_speed_10m", [])
+        wind_gusts = hourly_data.get("wind_gusts_10m", [])
 
         s_times = times[start_index:]
         s_temps = temperatures[start_index:]
@@ -926,6 +941,8 @@ class WeatherAgenda(BasePlugin):
         s_rain = rain[start_index:]
         s_codes = codes[start_index:]
         s_uv = uv_index[start_index:]
+        s_wind = wind_speeds[start_index:]
+        s_gust = wind_gusts[start_index:]
 
         for i in range(min(24, len(s_times))):
             dt = _parse_local(s_times[i], tz)
@@ -936,6 +953,8 @@ class WeatherAgenda(BasePlugin):
             hourly.append({
                 "time": self._format_time(dt, time_format, True),
                 "temperature": int(s_temps[i]) if i < len(s_temps) else 0,
+                "wind_speed": self._hourly_wind(s_wind[i] if i < len(s_wind) else None),
+                "wind_gust": self._hourly_wind(s_gust[i] if i < len(s_gust) else None),
                 "precipitation": (s_probs[i] / 100) if i < len(s_probs) else 0,
                 "rain": s_rain[i] if i < len(s_rain) else 0,
                 "uv_index": round(s_uv[i], 1) if i < len(s_uv) else 0,

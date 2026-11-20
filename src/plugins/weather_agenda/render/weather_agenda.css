@@ -349,7 +349,7 @@
   flex-direction: row;
   align-items: baseline;
   justify-content: space-between;
-  gap: 0.8vw;
+  gap: 0.4vw;
   width: 100%;
   padding-bottom: 0.2dvh;
   margin-bottom: 0.2dvh;
@@ -361,7 +361,10 @@
   font-weight: bold;
   text-align: left;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  /* Tight tracking so the widest labels (e.g. "MON 12/30") leave room for
+     the high/low temps beside them. */
+  letter-spacing: -0.03em;
+  word-spacing: -0.12em;
   line-height: 120%;
   opacity: 0.85;
   white-space: nowrap;

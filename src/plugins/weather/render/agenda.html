@@ -10,7 +10,7 @@
     /* Shared label base */
     .wa-outer::before, .wa-layout::before, .wa-weather-col::before,
     .wa-header::before, .wa-current-forecast::before, .wa-current-left::before,
-    .wa-metrics-row::before, .wa-temp-icon-block::before, .wa-temp-icon-row::before,
+    .wa-temp-icon-block::before, .wa-temp-icon-row::before,
     .wa-temp::before, .wa-agenda-col::before, .wa-agenda-day::before,
     .wa-agenda-day-body::before, .wa-agenda-day-events::before,
     .wa-agenda-day-wx::before, .wa-agenda-event::before,
@@ -47,8 +47,6 @@
     .wa-current-left     { background: rgba(255,0,128,0.07); outline: 2px dashed hotpink; position: relative; }
     .wa-current-left::before { content: "wa-current-left"; background: hotpink;     color: #000; top: 12px; left: 0; }
 
-    .wa-metrics-row      { background: rgba(0,200,100,0.10); outline: 2px dashed mediumseagreen; position: relative; }
-    .wa-metrics-row::before { content: "wa-metrics-row";   background: mediumseagreen; color: #fff; top: 0; right: 0; }
 
     .wa-temp-icon-block  { outline: 1px dashed plum;       position: relative; }
     .wa-temp-icon-block::before { content: "wa-temp-icon-block"; background: plum;  color: #000; top: 0; left: 0; }
@@ -150,20 +148,6 @@
                 <span class="wa-temp-unit">{{ temperature_unit }}</span>
               </span>
             </div>
-
-            {% if metrics_below %}
-            <div class="wa-metrics-row">
-              {% for dp in metrics_below %}
-              <div class="wa-data-point" {% if plugin_settings.wireframeMode == "true" %}data-dbg="{{ dp.icon.split('/') | last }}"{% endif %}>
-                <img class="wa-dp-icon" src="{{ dp.icon }}" alt="{{ dp.label }}">
-                <div class="wa-dp-text">
-                  <div class="wa-dp-label">{{ dp.label }}</div>
-                  <div class="wa-dp-value">{{ dp.measurement }}{% if dp.unit %}<span class="wa-dp-unit"> {{ dp.unit }}</span>{% endif %}{% if dp.label == "Wind" %} {{ dp.arrow }}{% endif %}</div>
-                </div>
-              </div>
-              {% endfor %}
-            </div>
-            {% endif %}
           </div>
 
         </div><!-- end wa-current-left -->
@@ -489,7 +473,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const peakGust = hasGust ? Math.max(...gusts.filter(isNum)) : peakWind;
   // Scale: 0 to the next multiple of 20 at or above the peak. Its ends are not written on screen.
   const windMax  = Math.max(20, Math.ceil(peakGust / 20) * 20);
-  const windUnit = isImperial ? "mph" : "kph";
+  const windUnit = "{{ wind_unit | replace('km/h', 'kph') }}";
 
   // Wind is drawn in the text colour at reduced strength so it recedes behind the weather.
   const windLine = withAlpha("{{ plugin_settings.textColor }}", 0.4);

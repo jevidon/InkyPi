@@ -9,16 +9,16 @@ import pytz
 # so src/ must be importable the same way it is at runtime.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src"))
 
-from plugins.weather_agenda.weather_agenda import (  # noqa: E402
+from plugins.weather.weather import (  # noqa: E402
     DAY_CHART_START_HOUR,
-    WeatherAgenda,
+    Weather,
 )
 
 POINTS_PER_DAY = 24 - DAY_CHART_START_HOUR + 1
 
 
 def _plugin():
-    return WeatherAgenda({"id": "weather_agenda"})
+    return Weather({"id": "weather"})
 
 
 def _hourly(hours, start="2026-11-27T00:00", **overrides):
@@ -153,7 +153,7 @@ def _template_params(**settings):
         return object()
 
     all_settings = {
-        "latitude": "40.7", "longitude": "-74.0", "units": "metric",
+        "latitude": "40.7", "longitude": "-74.0", "units": "metric", "layout": "agenda",
         "weatherProvider": "OpenMeteo", "calendarURLs[]": ["https://example.invalid/a.ics"],
     }
     all_settings.update(settings)
@@ -178,8 +178,8 @@ class TestForecastStyleSetting:
 
         assert len(cards[0]["chart"]["temperature"]) == POINTS_PER_DAY
 
-    def test_classic_style_leaves_the_charts_out(self):
-        cards = _template_params(agendaForecastStyle="classic")["agenda_events"]
+    def test_summary_style_leaves_the_charts_out(self):
+        cards = _template_params(agendaForecastStyle="summary")["agenda_events"]
 
         assert [card["chart"] for card in cards] == [None] * len(cards)
         assert cards[0]["forecast"] is not None
@@ -202,7 +202,14 @@ class TestDayChartWindSetting:
 
         assert params["agenda_chart_wind"] is False
 
-    def test_instance_saved_before_the_setting_follows_hourly_wind(self):
-        assert _template_params(displayGraphWind="true")["agenda_chart_wind"] is True
-        assert _template_params(displayGraphWind="false")["agenda_chart_wind"] is False
-        assert _template_params()["agenda_chart_wind"] is False
+    def test_wind_is_off_when_the_setting_is_missing(self):
+        assert _template_params(displayGraphWind="true")["agenda_chart_wind"] is False
+
+
+class TestClassicLayout:
+
+    def test_classic_layout_has_no_agenda(self):
+        params = _template_params(layout="classic")
+
+        assert "agenda_events" not in params
+        assert "sun_metrics" not in params

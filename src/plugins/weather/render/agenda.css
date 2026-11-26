@@ -248,64 +248,6 @@
   font-weight: bold;
 }
 
-/* --- Metrics rows --- */
-.wa-metrics-row {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-end;
-  gap: 1vw;
-  flex-shrink: 0;
-  overflow: visible;
-  margin-left: -2vw;
-}
-
-/* Each metric: icon left, label+value stacked right */
-.wa-data-point {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 0.5vw;
-  overflow: visible;
-  min-width: 0;
-}
-
-.wa-dp-icon {
-  height: min(5dvh, 3.5vw);
-  width: auto;
-  flex-shrink: 0;
-  object-fit: contain;
-}
-
-.wa-dp-text {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.wa-dp-label {
-  font-size: min(1.8dvh, 1.5vw);
-  opacity: 0.6;
-  white-space: nowrap;
-  line-height: 120%;
-}
-
-.wa-dp-value {
-  font-size: min(2.8dvh, 2.4vw);
-  font-weight: bold;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 120%;
-}
-
-.wa-dp-unit {
-  font-size: 0.75em;
-  font-weight: normal;
-  opacity: 0.8;
-}
-
 /* =========================================================================
    DIVIDER
    ========================================================================= */

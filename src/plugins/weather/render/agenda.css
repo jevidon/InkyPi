@@ -428,14 +428,14 @@
 .wa-agenda-day-wx--timed {
   justify-content: space-between;
   gap: 0.6dvh;
-  padding-top: 0.2dvh;
   padding-bottom: 0.3dvh;
 }
 
+/* Top-aligned, so a one-line outlook sits where a two-line one starts. */
 .wa-wx-outlook {
   display: flex;
   flex-direction: row;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.5vw;
 }
 
@@ -446,11 +446,14 @@
   flex-shrink: 0;
 }
 
-/* Up to three lines; a longer outlook is cut short rather than pushing the rows down. */
+/* Up to three lines; a longer outlook is cut short rather than pushing the rows down.
+   The first line is centred on the day label's line beside it: half the difference
+   between that line's height and this one's. */
 .wa-wx-outlook-text {
   font-size: min(1.45dvh, 1.2vw);
   font-weight: 600;
   line-height: 1.15;
+  margin-top: calc((min(2.4dvh, 2.4vw) * 1.2 - min(1.45dvh, 1.2vw) * 1.15) / 2);
   min-width: 0;
   display: -webkit-box;
   -webkit-line-clamp: 3;

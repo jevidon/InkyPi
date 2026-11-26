@@ -1,6 +1,9 @@
 import os
 import sys
 from datetime import datetime, timedelta
+from unittest.mock import patch
+
+import pytz
 
 # Plugins import their siblings as top-level packages (e.g. `plugins.base_plugin`),
 # so src/ must be importable the same way it is at runtime.
@@ -111,3 +114,95 @@ class TestDayCharts:
 
     def test_no_hourly_data_gives_no_charts(self):
         assert _plugin()._parse_open_meteo_day_charts({}, "metric") == {}
+
+
+class _DeviceConfig:
+    def get_config(self, key=None, default=None):
+        return {"timezone": "America/New_York", "time_format": "12h"}.get(key, default)
+
+    def get_resolution(self):
+        return (1600, 1200)
+
+    def load_env_key(self, key):
+        return None
+
+
+def _template_params(**settings):
+    """Run generate_image on made-up Open-Meteo data and return what it hands the template."""
+    tz = pytz.timezone("America/New_York")
+    midnight = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
+    days = [midnight + timedelta(days=d) for d in range(3)]
+    weather = {
+        "current": {"time": midnight.strftime("%Y-%m-%dT%H:%M"), "temperature": 9},
+        "daily": {
+            "time": [day.strftime("%Y-%m-%d") for day in days],
+            "weathercode": [3] * 3,
+            "temperature_2m_max": [18] * 3,
+            "temperature_2m_min": [8] * 3,
+            "sunrise": [day.strftime("%Y-%m-%dT06:00") for day in days],
+            "sunset": [day.strftime("%Y-%m-%dT20:00") for day in days],
+        },
+        # Two full days: today and tomorrow each end with the next day's midnight.
+        "hourly": _hourly(49, start=midnight.strftime("%Y-%m-%dT%H:%M")),
+    }
+    plugin = _plugin()
+    captured = {}
+
+    def capture(dimensions, html_file, css_file, template_params):
+        captured.update(template_params)
+        return object()
+
+    all_settings = {
+        "latitude": "40.7", "longitude": "-74.0", "units": "metric",
+        "weatherProvider": "OpenMeteo", "calendarURLs[]": ["https://example.invalid/a.ics"],
+    }
+    all_settings.update(settings)
+    with patch.object(plugin, "_get_open_meteo_data", return_value=weather), \
+            patch.object(plugin, "_get_open_meteo_air_quality", return_value={}), \
+            patch.object(plugin, "_fetch_ics_events", return_value=[]), \
+            patch.object(plugin, "render_image", side_effect=capture):
+        plugin.generate_image(all_settings, _DeviceConfig())
+    return captured
+
+
+class TestForecastStyleSetting:
+
+    def test_day_chart_is_the_default(self):
+        cards = _template_params()["agenda_events"]
+
+        # Today and tomorrow have a forecast and a full day of hourly data.
+        assert [bool(card["chart"]) for card in cards[:2]] == [True, True]
+
+    def test_chart_style_attaches_each_days_chart(self):
+        cards = _template_params(agendaForecastStyle="chart")["agenda_events"]
+
+        assert len(cards[0]["chart"]["temperature"]) == POINTS_PER_DAY
+
+    def test_classic_style_leaves_the_charts_out(self):
+        cards = _template_params(agendaForecastStyle="classic")["agenda_events"]
+
+        assert [card["chart"] for card in cards] == [None] * len(cards)
+        assert cards[0]["forecast"] is not None
+
+    def test_card_without_a_forecast_has_no_chart(self):
+        cards = _template_params()["agenda_events"]
+
+        # The made-up forecast covers three days; the fourth card has none.
+        assert cards[3]["forecast"] is None
+        assert cards[3]["chart"] is None
+
+
+class TestDayChartWindSetting:
+
+    def test_own_setting_turns_wind_on(self):
+        assert _template_params(agendaChartWind="true")["agenda_chart_wind"] is True
+
+    def test_own_setting_turns_wind_off_even_with_hourly_wind_on(self):
+        params = _template_params(agendaChartWind="false", displayGraphWind="true")
+
+        assert params["agenda_chart_wind"] is False
+
+    def test_instance_saved_before_the_setting_follows_hourly_wind(self):
+        assert _template_params(displayGraphWind="true")["agenda_chart_wind"] is True
+        assert _template_params(displayGraphWind="false")["agenda_chart_wind"] is False
+        assert _template_params()["agenda_chart_wind"] is False

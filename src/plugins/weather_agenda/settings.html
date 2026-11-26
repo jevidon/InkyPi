@@ -1,189 +1,671 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
-<!-- ===== WEATHER SETTINGS ===== -->
-<div class="form-group">
-    <label class="form-label">Location:</label>
-    <div class="form-group">
-        <span>Latitude</span>
-        <input readonly type="text" id="latitude" name="latitude" class="form-input" />
-    </div>
-    <div class="form-group">
-        <span>Longitude</span>
-        <input readonly type="text" id="longitude" name="longitude" class="form-input" />
-    </div>
-    <button type="button" id="openMap" class="action-button compact">Select Location</button>
-</div>
+<style>
+    /* Settings are grouped by the part of the screen they change. Each row has a
+       name and a one-line explanation on the left and its control on the right. */
+    .wa-settings {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        margin: 6px 0 4px;
+        color: var(--text-primary);
+    }
 
-<div class="form-group">
-    <label for="weatherProvider" class="form-label">Weather Provider:</label>
-    <select id="weatherProvider" name="weatherProvider" class="form-input" onchange="updateWeatherProviderUI(this.value)">
-        <option value="OpenMeteo">Open-Meteo</option>
-        <option value="OpenWeatherMap">OpenWeatherMap</option>
-    </select>
+    .wa-settings [hidden] {
+        display: none !important;
+    }
 
-    <label for="units" class="form-label">Units:</label>
-    <select id="units" name="units" class="form-input">
-        <option value="imperial">Imperial (°F)</option>
-        <option value="metric">Metric (°C)</option>
-        <option value="standard">Standard (K)</option>
-    </select>
-</div>
+    .wa-section {
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        padding: 12px 16px 4px;
+    }
 
-<div class="form-group" id="titleOptionWrapper">
-    <label class="form-label">Title:</label>
-    <div class="form-group">
-        <input type="radio" id="title-location" name="titleSelection" value="location">
-        <label for="title-location">Location</label>
-        <input type="radio" id="title-custom" name="titleSelection" value="custom">
-        <label for="title-custom">Custom</label>
-        <input type="text" id="customTitle" name="customTitle" class="form-input" placeholder="Type something..." />
-    </div>
-</div>
+    .wa-section-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+    }
 
-<div class="form-group">
-    <label class="form-label">Display:</label>
+    .wa-section-hint,
+    .wa-row-hint {
+        display: block;
+        font-size: 0.85rem;
+        line-height: 1.35;
+        color: var(--text-secondary);
+    }
 
-    <div class="form-group">
-        <input type="checkbox" id="displayUpdatedAt" name="displayUpdatedAt" onclick="this.value=this.checked ? 'true' : 'false';">
-        <span>Updated At (alongside date)</span>
-    </div>
+    .wa-section-hint {
+        margin: 2px 0 6px;
+    }
 
-    <div class="form-group">
-        <input type="checkbox" id="displayGraph" name="displayGraph" onclick="this.value=this.checked ? 'true' : 'false';">
-        <span>Weather Graph</span>
-    </div>
+    .wa-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px 20px;
+        padding: 11px 0;
+        border-top: 1px solid var(--border-color);
+    }
 
-    <div class="form-group">
-        <input type="checkbox" id="displayRain" name="displayRain" onclick="this.value=this.checked ? 'true' : 'false';">
-        <span>Rain Amount</span>
-    </div>
+    /* Rows whose control needs the full width sit under their name. */
+    .wa-row--stack {
+        flex-direction: column;
+        align-items: stretch;
+    }
 
-    <div class="form-group">
-        <input type="checkbox" id="displayGraphSunEvents" name="displayGraphSunEvents" onclick="this.value=this.checked ? 'true' : 'false';">
-        <span>Sunrise/Sunset on Graph</span>
-    </div>
+    .wa-row-text {
+        flex: 1 1 240px;
+        min-width: 0;
+    }
 
-    <div class="form-group">
-        <input type="checkbox" id="displayGraphWind" name="displayGraphWind" onclick="this.value=this.checked ? 'true' : 'false';">
-        <span>Wind/Gusts on Graph</span>
-    </div>
+    .wa-row--stack .wa-row-text {
+        flex: none;
+    }
 
-    <div class="form-group">
-        <input type="checkbox" id="displayGraphIcons" name="displayGraphIcons" onclick="this.value=this.checked ? 'true' : 'false';">
-        <span>Graph icons every</span>
-        <select id="graphIconStep" name="graphIconStep" class="form-input">
-            <option value="1">1</option>
-            <option value="2" selected>2</option>
-            <option value="4">4</option>
-            <option value="6">6</option>
-            <option value="12">12</option>
-        </select>
-        <span>hours</span>
-    </div>
+    .wa-row-label {
+        display: block;
+        font-weight: 600;
+        cursor: default;
+    }
 
-    <div class="form-group">
-        <input type="hidden" id="showSecondaryTempValue" name="showSecondaryTemp" value="false">
-        <input type="checkbox" id="showSecondaryTemp" onclick="document.getElementById('showSecondaryTempValue').value = this.checked ? 'true' : 'false';">
-        <span>Secondary Temps (alt unit for H/L and forecast)</span>
-    </div>
+    label.wa-row-label {
+        cursor: pointer;
+    }
 
-    <div class="form-group">
-        <input type="checkbox" id="wireframeMode" name="wireframeMode" onclick="this.value=this.checked ? 'true' : 'false';">
-        <span>Wireframe Mode (debug layout)</span>
-    </div>
+    .wa-row-hint a {
+        color: var(--accent-hover);
+    }
 
-    <div class="form-group">
-        <label for="weatherTimeZone" class="form-label">Time Zone:</label>
-        <select id="weatherTimeZone" name="weatherTimeZone" class="form-input">
-            <option value="locationTimeZone">Use Location Time Zone</option>
-            <option value="localTimeZone">Use Local Time Zone</option>
-        </select>
-    </div>
-</div>
+    .wa-row-control {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 10px;
+    }
 
-<!-- ===== CALENDAR / AGENDA SETTINGS ===== -->
-<div class="form-group">
-    <label class="form-label">Calendars:</label>
-    <div id="calendarList"></div>
-    <button type="button" id="addCalendarBtn" class="form-input collapsible" onclick="addCalendarInput('', '#007BFF')">Add Calendar</button>
+    .wa-row-control select.form-input {
+        flex: none;
+        min-width: 11rem;
+    }
+
+    .wa-row-control .wa-inline-select {
+        min-width: 0;
+    }
+
+    /* Options that only apply while the switch above them is on. */
+    .wa-sub {
+        margin-left: 14px;
+        padding-left: 14px;
+        border-left: 2px solid var(--border-color);
+    }
+
+    .wa-dim {
+        opacity: 0.45;
+    }
+
+    /* On/off switch drawn on a plain checkbox, so it keeps keyboard and label behaviour. */
+    .wa-switch {
+        -webkit-appearance: none;
+        appearance: none;
+        flex: none;
+        position: relative;
+        width: 46px;
+        height: 26px;
+        border-radius: 13px;
+        background-color: var(--border-light);
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+    }
+
+    .wa-switch::before {
+        content: "";
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background-color: #ffffff;
+        box-shadow: 0 1px 2px var(--shadow-medium);
+        transition: transform 0.2s ease;
+    }
+
+    .wa-switch:checked {
+        background-color: var(--accent-primary);
+    }
+
+    .wa-switch:checked::before {
+        transform: translateX(20px);
+    }
+
+    .wa-switch:focus-visible,
+    .wa-choice input:focus-visible + .wa-choice-body,
+    .wa-secondary-button:focus-visible {
+        outline: 2px solid var(--accent-primary);
+        outline-offset: 2px;
+    }
+
+    /* Location: two read-only coordinates and the button that sets them. */
+    .wa-location {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: 10px;
+    }
+
+    .wa-field {
+        flex: 1 1 150px;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+    }
+
+    .wa-field .form-input {
+        width: 100%;
+        padding: 0.5rem;
+    }
+
+    .wa-location .action-button {
+        flex: none;
+    }
+
+    .wa-title-choice {
+        display: flex;
+        align-items: center;
+        gap: 6px 14px;
+        flex-wrap: wrap;
+    }
+
+    .wa-title-choice label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+    }
+
+    .wa-title-input {
+        width: 100%;
+        padding: 0.5rem;
+    }
+
+    /* Picture choices for the forecast box. */
+    .wa-choices {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+    }
+
+    .wa-choice {
+        position: relative;
+        display: block;
+        cursor: pointer;
+    }
+
+    .wa-choice input {
+        position: absolute;
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+
+    .wa-choice-body {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        height: 100%;
+        padding: 10px 12px;
+        border: 2px solid var(--border-color);
+        border-radius: 10px;
+        background-color: var(--input-bg);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .wa-choice input:checked + .wa-choice-body {
+        border-color: var(--accent-primary);
+        box-shadow: 0 0 0 2px var(--input-focus);
+    }
+
+    .wa-choice-art {
+        flex: none;
+        width: 112px;
+        height: 60px;
+        border-radius: 6px;
+        background-color: #ffffff;
+        color: #333333;
+    }
+
+    .wa-choice-name {
+        display: block;
+        font-weight: 600;
+    }
+
+    .wa-choice-mark {
+        display: none;
+        margin-left: 6px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--accent-hover);
+    }
+
+    .wa-choice input:checked + .wa-choice-body .wa-choice-mark {
+        display: inline;
+    }
+
+    /* Calendars */
+    #calendarList {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    #calendarList:empty::before {
+        content: "No calendars yet. Without one, the day cards are not shown.";
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+    }
+
+    .wa-calendar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .wa-calendar .form-input {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 0.5rem;
+    }
+
+    .wa-calendar .color-picker {
+        flex: none;
+        width: 36px;
+        height: 36px;
+    }
+
+    .wa-calendar .remove-btn {
+        flex: none;
+        margin-left: 0;
+        padding: 6px 8px;
+    }
+
+    .wa-secondary-button {
+        align-self: flex-start;
+        padding: 8px 14px;
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        background-color: var(--button-bg);
+        border: 1px solid var(--border-light);
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+    }
+
+    .wa-secondary-button:hover {
+        background-color: var(--button-hover);
+    }
+
+    /* Rarely needed settings, folded away. */
+    .wa-advanced > summary {
+        padding: 2px 0 10px;
+        font-size: 1.1rem;
+        font-weight: 700;
+        cursor: pointer;
+    }
+</style>
+
+<div class="wa-settings">
+
+    <!-- ===== Weather: where the forecast is for and how it is measured ===== -->
+    <section class="wa-section">
+        <h2 class="wa-section-title">Weather</h2>
+        <p class="wa-section-hint">Where the forecast is for, and how it is measured.</p>
+
+        <div class="wa-row wa-row--stack">
+            <div class="wa-row-text">
+                <span class="wa-row-label">Location</span>
+                <span class="wa-row-hint" id="locationHint">Pick the place on a map. The coordinates fill in for you.</span>
+            </div>
+            <div class="wa-location">
+                <label class="wa-field">Latitude
+                    <input readonly type="text" id="latitude" name="latitude" class="form-input" placeholder="Not set" />
+                </label>
+                <label class="wa-field">Longitude
+                    <input readonly type="text" id="longitude" name="longitude" class="form-input" placeholder="Not set" />
+                </label>
+                <button type="button" id="openMap" class="action-button compact">Choose on map</button>
+            </div>
+        </div>
+
+        <div class="wa-row">
+            <div class="wa-row-text">
+                <label for="weatherProvider" class="wa-row-label">Weather provider</label>
+                <span class="wa-row-hint" id="providerHint"></span>
+            </div>
+            <div class="wa-row-control">
+                <select id="weatherProvider" name="weatherProvider" class="form-input" onchange="updateWeatherProviderUI(this.value)">
+                    <option value="OpenMeteo">Open-Meteo</option>
+                    <option value="OpenWeatherMap">OpenWeatherMap</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="wa-row" data-owm-only>
+            <div class="wa-row-text">
+                <label for="weatherTimeZone" class="wa-row-label">Time zone</label>
+                <span class="wa-row-hint">Whose clock the times on screen follow.</span>
+            </div>
+            <div class="wa-row-control">
+                <select id="weatherTimeZone" name="weatherTimeZone" class="form-input">
+                    <option value="locationTimeZone">The location's time zone</option>
+                    <option value="localTimeZone">This device's time zone</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="wa-row">
+            <div class="wa-row-text">
+                <label for="units" class="wa-row-label">Units</label>
+                <span class="wa-row-hint">Used for temperature, wind and rain.</span>
+            </div>
+            <div class="wa-row-control">
+                <select id="units" name="units" class="form-input">
+                    <option value="imperial">Imperial (°F)</option>
+                    <option value="metric">Metric (°C)</option>
+                    <option value="standard">Standard (K)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="wa-row">
+            <div class="wa-row-text">
+                <label for="showSecondaryTemp" class="wa-row-label">Second temperature unit</label>
+                <span class="wa-row-hint">Adds the other unit in brackets, like 9°C (48°F), to the current temperature and each day's high and low.</span>
+            </div>
+            <div class="wa-row-control">
+                <input type="checkbox" class="wa-switch" id="showSecondaryTemp" data-setting="showSecondaryTemp" checked>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== Heading: the date block at the top left ===== -->
+    <section class="wa-section">
+        <h2 class="wa-section-title">Heading</h2>
+        <p class="wa-section-hint">The date block at the top left of the screen.</p>
+
+        <div class="wa-row wa-row--stack" id="titleOptionWrapper">
+            <div class="wa-row-text">
+                <label for="customTitle" class="wa-row-label">Title</label>
+                <span class="wa-row-hint">An optional line under the date. Leave it empty for none.</span>
+            </div>
+            <div class="wa-title-choice" data-owm-only>
+                <label for="title-location"><input type="radio" id="title-location" name="titleSelection" value="location"> Use the location's name</label>
+                <label for="title-custom"><input type="radio" id="title-custom" name="titleSelection" value="custom"> Use my own text</label>
+            </div>
+            <input type="text" id="customTitle" name="customTitle" class="form-input wa-title-input" placeholder="For example: Home" />
+        </div>
+
+        <div class="wa-row">
+            <div class="wa-row-text">
+                <label for="displayUpdatedAt" class="wa-row-label">Last updated time</label>
+                <span class="wa-row-hint">Shows when the screen last refreshed, under the date.</span>
+            </div>
+            <div class="wa-row-control">
+                <input type="checkbox" class="wa-switch" id="displayUpdatedAt" data-setting="displayUpdatedAt">
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== Agenda: the day cards on the right ===== -->
+    <section class="wa-section">
+        <h2 class="wa-section-title">Agenda</h2>
+        <p class="wa-section-hint">The day cards down the right-hand side: your events with each day's forecast.</p>
+
+        <div class="wa-row wa-row--stack">
+            <div class="wa-row-text">
+                <span class="wa-row-label">Calendars</span>
+                <span class="wa-row-hint">Paste each calendar's iCal (.ics) link. The colour marks that calendar's events.</span>
+            </div>
+            <div id="calendarList"></div>
+            <button type="button" id="addCalendarBtn" class="wa-secondary-button" onclick="addCalendarInput('', '#007BFF', true)">+ Add calendar</button>
+        </div>
+
+        <div class="wa-row wa-row--stack">
+            <div class="wa-row-text">
+                <span class="wa-row-label" id="forecastStyleLabel">Forecast box</span>
+                <span class="wa-row-hint">What each day card shows beside its events.</span>
+            </div>
+            <div class="wa-choices" role="radiogroup" aria-labelledby="forecastStyleLabel">
+                <label class="wa-choice">
+                    <input type="radio" name="agendaForecastStyle" value="chart" checked>
+                    <span class="wa-choice-body">
+                        <svg class="wa-choice-art" viewBox="0 0 112 60" aria-hidden="true">
+                            <circle cx="12" cy="10" r="5" fill="#4a9bd8"/>
+                            <rect x="23" y="7" width="18" height="6" rx="3" fill="currentColor" opacity="0.6"/>
+                            <rect x="47" y="7" width="14" height="6" rx="3" fill="currentColor" opacity="0.6"/>
+                            <rect x="67" y="7" width="10" height="6" rx="3" fill="currentColor" opacity="0.6"/>
+                            <line x1="6" y1="19" x2="106" y2="19" stroke="currentColor" stroke-width="1"/>
+                            <path d="M6 56 C 26 56, 34 25, 56 25 S 92 42, 106 52 L 106 56 Z" fill="#fccc05"/>
+                            <path d="M30 56 C 40 56, 44 38, 52 38 S 64 56, 74 56 Z" fill="#f59e0b"/>
+                            <path d="M6 56 C 26 56, 34 25, 56 25 S 92 42, 106 52" fill="none" stroke="#f17a24" stroke-width="2"/>
+                            <path d="M6 46 C 40 44, 62 34, 106 42" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.5"/>
+                            <line x1="6" y1="56.5" x2="106" y2="56.5" stroke="currentColor" stroke-width="1" opacity="0.4"/>
+                        </svg>
+                        <span>
+                            <span class="wa-choice-name">Day chart<span class="wa-choice-mark">Selected</span></span>
+                            <span class="wa-row-hint">One line of stats over that day's temperature, UV, rain and wind.</span>
+                        </span>
+                    </span>
+                </label>
+                <label class="wa-choice">
+                    <input type="radio" name="agendaForecastStyle" value="classic">
+                    <span class="wa-choice-body">
+                        <svg class="wa-choice-art" viewBox="0 0 112 60" aria-hidden="true">
+                            <circle cx="12" cy="11" r="4.5" fill="#4a9bd8"/>
+                            <rect x="22" y="8" width="24" height="6" rx="3" fill="currentColor" opacity="0.6"/>
+                            <circle cx="12" cy="25" r="4.5" fill="#4a9bd8"/>
+                            <rect x="22" y="22" width="34" height="6" rx="3" fill="currentColor" opacity="0.6"/>
+                            <circle cx="12" cy="39" r="4.5" fill="#e8a13a"/>
+                            <rect x="22" y="36" width="12" height="6" rx="3" fill="currentColor" opacity="0.6"/>
+                            <circle cx="76" cy="40" r="11" fill="#2f7fc4"/>
+                            <circle cx="92" cy="43" r="10" fill="#9ccbf0"/>
+                            <rect x="66" y="43" width="36" height="10" rx="5" fill="#9ccbf0"/>
+                        </svg>
+                        <span>
+                            <span class="wa-choice-name">Classic<span class="wa-choice-mark">Selected</span></span>
+                            <span class="wa-row-hint">Rain chance, wind and UV on three rows with a large weather icon.</span>
+                        </span>
+                    </span>
+                </label>
+            </div>
+        </div>
+
+        <div class="wa-row" id="agendaChartWindRow">
+            <div class="wa-row-text">
+                <label for="agendaChartWind" class="wa-row-label">Wind on day charts</label>
+                <span class="wa-row-hint">A solid line for wind and a dashed line for gusts on each day's chart.</span>
+            </div>
+            <div class="wa-row-control">
+                <input type="checkbox" class="wa-switch" id="agendaChartWind" data-setting="agendaChartWind" checked>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== Hourly chart: the strip across the bottom ===== -->
+    <section class="wa-section">
+        <h2 class="wa-section-title">Hourly chart</h2>
+        <p class="wa-section-hint">The next 24 hours of temperature, UV and rain across the bottom of the screen.</p>
+
+        <div class="wa-row">
+            <div class="wa-row-text">
+                <label for="displayGraph" class="wa-row-label">Show the hourly chart</label>
+                <span class="wa-row-hint">Turn off to give its space to the weather and agenda above.</span>
+            </div>
+            <div class="wa-row-control">
+                <input type="checkbox" class="wa-switch" id="displayGraph" data-setting="displayGraph" checked>
+            </div>
+        </div>
+
+        <div class="wa-sub" id="hourlyOptions">
+            <div class="wa-row">
+                <div class="wa-row-text">
+                    <label for="displayRain" class="wa-row-label">Rain amounts</label>
+                    <span class="wa-row-hint">Writes the amount above each hour's rain bar.</span>
+                </div>
+                <div class="wa-row-control">
+                    <input type="checkbox" class="wa-switch" id="displayRain" data-setting="displayRain">
+                </div>
+            </div>
+
+            <div class="wa-row">
+                <div class="wa-row-text">
+                    <label for="displayGraphWind" class="wa-row-label">Wind and gusts</label>
+                    <span class="wa-row-hint">A solid line for wind and a dashed line for gusts, with their peaks beside the left axis.</span>
+                </div>
+                <div class="wa-row-control">
+                    <input type="checkbox" class="wa-switch" id="displayGraphWind" data-setting="displayGraphWind">
+                </div>
+            </div>
+
+            <div class="wa-row">
+                <div class="wa-row-text">
+                    <label for="displayGraphSunEvents" class="wa-row-label">Sunrise and sunset</label>
+                    <span class="wa-row-hint">Marks both along the top of the chart.</span>
+                </div>
+                <div class="wa-row-control">
+                    <input type="checkbox" class="wa-switch" id="displayGraphSunEvents" data-setting="displayGraphSunEvents" checked>
+                </div>
+            </div>
+
+            <div class="wa-row">
+                <div class="wa-row-text">
+                    <label for="displayGraphIcons" class="wa-row-label">Weather icons</label>
+                    <span class="wa-row-hint">A small weather icon under the chart at regular steps.</span>
+                </div>
+                <div class="wa-row-control">
+                    <span class="wa-row-control" id="graphIconStepWrap">
+                        <label for="graphIconStep">every</label>
+                        <select id="graphIconStep" name="graphIconStep" class="form-input wa-inline-select">
+                            <option value="1">1 hour</option>
+                            <option value="2" selected>2 hours</option>
+                            <option value="4">4 hours</option>
+                            <option value="6">6 hours</option>
+                            <option value="12">12 hours</option>
+                        </select>
+                    </span>
+                    <input type="checkbox" class="wa-switch" id="displayGraphIcons" data-setting="displayGraphIcons">
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== Advanced ===== -->
+    <details class="wa-section wa-advanced">
+        <summary>Advanced</summary>
+        <div class="wa-row">
+            <div class="wa-row-text">
+                <label for="wireframeMode" class="wa-row-label">Layout outlines</label>
+                <span class="wa-row-hint">Draws a labelled outline around every part of the screen. Only useful when changing the layout.</span>
+            </div>
+            <div class="wa-row-control">
+                <input type="checkbox" class="wa-switch" id="wireframeMode" data-setting="wireframeMode">
+            </div>
+        </div>
+    </details>
+
 </div>
 
 <!-- Location map modal -->
 <div id="mapModal" class="modal">
     <div class="modal-content">
         <span class="close-button" onclick="closeModal('mapModal')">×</span>
-        <h2 id="modalTitle">Select Location</h2>
+        <h2 id="modalTitle">Choose location</h2>
         <div class="separator"></div>
+        <p class="wa-row-hint">Click the map or drag the pin, then save.</p>
         <div id="map" style="width: 100%; height: 200px; margin: 10px 0;"></div>
-        <button id="closeMap" class="action-button">Save</button>
+        <button type="button" id="closeMap" class="action-button">Use this location</button>
     </div>
 </div>
 
 <script>
-    function updateWeatherProviderUI(provider) {
-        const titleLocationRadio = document.getElementById('title-location');
-        const titleLocationLabel = document.querySelector('label[for="title-location"]');
-        const titleCustomRadio   = document.getElementById('title-custom');
-        const customTitleInput   = document.getElementById('customTitle');
-        const tzSelect           = document.getElementById('weatherTimeZone');
-        const tzLabel            = document.querySelector('label[for="weatherTimeZone"]');
-        const apiKeyLabel        = document.querySelector('.api-key-label');
-
-        if (provider === 'OpenMeteo') {
-            titleLocationRadio.style.display = 'none';
-            titleLocationLabel.style.display = 'none';
-            titleLocationRadio.disabled = true;
-            tzSelect.style.display = 'none';
-            if (tzLabel) tzLabel.style.display = 'none';
-            tzSelect.disabled = true;
-            titleCustomRadio.checked = true;
-            titleCustomRadio.disabled = false;
-            customTitleInput.disabled = false;
-            if (apiKeyLabel) apiKeyLabel.style.display = 'none';
-        } else {
-            titleLocationRadio.style.display = '';
-            titleLocationLabel.style.display = '';
-            titleLocationRadio.disabled = false;
-            tzSelect.style.display = '';
-            if (tzLabel) tzLabel.style.display = '';
-            tzSelect.disabled = false;
-            titleCustomRadio.disabled = false;
-            customTitleInput.disabled = false;
-            if (apiKeyLabel) apiKeyLabel.style.display = '';
-        }
+    // Every on/off setting is a checkbox carrying its setting name in data-setting.
+    function settingSwitches() {
+        return document.querySelectorAll('.wa-settings input[data-setting]');
     }
 
-    function addCalendarInput(url, color) {
+    function updateWeatherProviderUI(provider) {
+        const openMeteo = provider === 'OpenMeteo';
+
+        // The location's name and the time zone choice only exist for OpenWeatherMap.
+        document.querySelectorAll('.wa-settings [data-owm-only]').forEach(el => { el.hidden = openMeteo; });
+        document.getElementById('title-location').disabled = openMeteo;
+        document.getElementById('weatherTimeZone').disabled = openMeteo;
+        if (openMeteo) document.getElementById('title-custom').checked = true;
+
+        const hint = document.getElementById('providerHint');
+        hint.textContent = '';
+        if (openMeteo) {
+            hint.textContent = 'Free, with no API key. OpenWeatherMap is used as a backup if a key is saved.';
+        } else {
+            hint.append('Needs an OpenWeatherMap key, saved on the ');
+            const link = document.createElement('a');
+            link.href = '/api-keys';
+            link.textContent = 'API keys page';
+            hint.append(link, '.');
+        }
+
+        const apiKeyLabel = document.querySelector('.api-key-label');
+        if (apiKeyLabel) apiKeyLabel.style.display = openMeteo ? 'none' : '';
+    }
+
+    // Shows only the options that currently have an effect.
+    function updateDependentOptions() {
+        const isOn = id => document.getElementById(id).checked;
+        document.getElementById('hourlyOptions').hidden = !isOn('displayGraph');
+        document.getElementById('graphIconStepWrap').classList.toggle('wa-dim', !isOn('displayGraphIcons'));
+        const style = document.querySelector('.wa-settings input[name="agendaForecastStyle"]:checked');
+        document.getElementById('agendaChartWindRow').hidden = !style || style.value !== 'chart';
+    }
+
+    function addCalendarInput(url, color, focus) {
         const calendarList = document.getElementById('calendarList');
 
         const wrapper = document.createElement('div');
-        wrapper.classList.add('calendar-entry', 'form-group');
+        wrapper.classList.add('calendar-entry', 'wa-calendar');
 
         const colorInput = document.createElement('input');
         colorInput.type = 'color';
         colorInput.name = 'calendarColors[]';
         colorInput.classList.add('color-picker');
         colorInput.value = color || '#007BFF';
+        colorInput.title = 'Event colour';
+        colorInput.setAttribute('aria-label', 'Event colour');
 
         const urlInput = document.createElement('input');
         urlInput.type = 'text';
         urlInput.name = 'calendarURLs[]';
-        urlInput.placeholder = 'Calendar URL';
-        urlInput.required = true;
+        urlInput.placeholder = 'https://…/basic.ics';
         urlInput.classList.add('form-input');
         urlInput.value = url || '';
+        urlInput.setAttribute('aria-label', 'Calendar iCal link');
 
         const removeBtn = document.createElement('button');
         removeBtn.type = 'button';
         removeBtn.innerText = '✕';
         removeBtn.classList.add('remove-btn');
+        removeBtn.title = 'Remove this calendar';
+        removeBtn.setAttribute('aria-label', 'Remove this calendar');
         removeBtn.onclick = () => wrapper.remove();
 
         wrapper.appendChild(colorInput);
         wrapper.appendChild(urlInput);
         wrapper.appendChild(removeBtn);
         calendarList.appendChild(wrapper);
+        if (focus) urlInput.focus();
     }
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -192,9 +674,6 @@
         const $openMap   = document.querySelector('#openMap');
         const $closeMap  = document.querySelector('#closeMap');
 
-        let latitude  = +$latitude.value;
-        let longitude = +$longitude.value;
-        let zoom      = latitude && longitude ? 4.5 : 2.5;
         let selectedTitle    = 'location';
         let weatherProvider  = 'OpenMeteo';
 
@@ -204,6 +683,9 @@
             openModal('mapModal');
             setTimeout(() => {
                 if (!map) {
+                    const latitude  = +$latitude.value;
+                    const longitude = +$longitude.value;
+                    const zoom      = latitude && longitude ? 4.5 : 2.5;
                     map = L.map('map').setView([latitude, longitude], zoom);
                     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
                     marker = L.marker([latitude, longitude], { draggable: true }).addTo(map);
@@ -213,46 +695,35 @@
         });
 
         $closeMap.addEventListener('click', () => {
-            const position = marker.getLatLng().wrap();
-            $latitude.value  = position.lat;
-            $longitude.value = position.lng;
+            if (marker) {
+                const position = marker.getLatLng().wrap();
+                $latitude.value  = position.lat;
+                $longitude.value = position.lng;
+            }
             closeModal('mapModal');
         });
 
         if (loadPluginSettings) {
             // Weather
-            document.getElementById('latitude').value  = pluginSettings.latitude  || '';
-            document.getElementById('longitude').value = pluginSettings.longitude || '';
+            $latitude.value  = pluginSettings.latitude  || '';
+            $longitude.value = pluginSettings.longitude || '';
             document.getElementById('units').value = pluginSettings.units || 'imperial';
-
-            document.getElementById('displayUpdatedAt').checked = pluginSettings.displayUpdatedAt === 'true';
-            document.getElementById('displayUpdatedAt').value   = pluginSettings.displayUpdatedAt || 'false';
-
-            document.getElementById('displayGraph').checked = pluginSettings.displayGraph === 'true';
-            document.getElementById('displayGraph').value   = pluginSettings.displayGraph || 'false';
-
-            document.getElementById('displayRain').checked = pluginSettings.displayRain === 'true';
-            document.getElementById('displayRain').value   = pluginSettings.displayRain || 'false';
-
-            document.getElementById('displayGraphSunEvents').checked = pluginSettings.displayGraphSunEvents === 'true';
-            document.getElementById('displayGraphSunEvents').value   = pluginSettings.displayGraphSunEvents || 'false';
-
-            document.getElementById('displayGraphWind').checked = pluginSettings.displayGraphWind === 'true';
-            document.getElementById('displayGraphWind').value   = pluginSettings.displayGraphWind || 'false';
-
-            document.getElementById('displayGraphIcons').checked = pluginSettings.displayGraphIcons === 'true';
-            document.getElementById('displayGraphIcons').value   = pluginSettings.displayGraphIcons || 'false';
-
             document.getElementById('graphIconStep').value = pluginSettings.graphIconStep || '2';
-
-            const showSecondaryTempChecked = pluginSettings.showSecondaryTemp !== 'false';
-            document.getElementById('showSecondaryTemp').checked = showSecondaryTempChecked;
-            document.getElementById('showSecondaryTempValue').value = showSecondaryTempChecked ? 'true' : 'false';
-
-            document.getElementById('wireframeMode').checked = pluginSettings.wireframeMode === 'true';
-            document.getElementById('wireframeMode').value   = pluginSettings.wireframeMode || 'false';
-
             document.getElementById('weatherTimeZone').value = pluginSettings.weatherTimeZone || 'locationTimeZone';
+
+            // Switches: a setting that was never saved is off, apart from the two below.
+            const whenNeverSaved = {
+                showSecondaryTemp: true,
+                // Day charts drew wind whenever the hourly chart did, before they had their own switch.
+                agendaChartWind: pluginSettings.displayGraphWind === 'true',
+            };
+            settingSwitches().forEach(box => {
+                const saved = pluginSettings[box.dataset.setting];
+                box.checked = saved === undefined ? !!whenNeverSaved[box.dataset.setting] : saved === 'true';
+            });
+
+            const forecastStyle = pluginSettings.agendaForecastStyle === 'classic' ? 'classic' : 'chart';
+            document.querySelector(`.wa-settings input[name="agendaForecastStyle"][value="${forecastStyle}"]`).checked = true;
 
             selectedTitle   = pluginSettings.titleSelection || 'location';
             weatherProvider = pluginSettings.weatherProvider || 'OpenMeteo';
@@ -268,24 +739,8 @@
             }
 
         } else {
-            // Defaults
+            // A new instance starts from the switches' and choices' defaults in the markup above.
             document.getElementById('units').value = 'imperial';
-            document.getElementById('displayUpdatedAt').checked = false;
-            document.getElementById('displayUpdatedAt').value   = 'false';
-            document.getElementById('displayGraph').checked = true;
-            document.getElementById('displayGraph').value   = 'true';
-            document.getElementById('displayRain').checked = false;
-            document.getElementById('displayRain').value   = 'false';
-            document.getElementById('displayGraphSunEvents').checked = true;
-            document.getElementById('displayGraphSunEvents').value   = 'true';
-            document.getElementById('displayGraphWind').checked = false;
-            document.getElementById('displayGraphWind').value   = 'false';
-            document.getElementById('displayGraphIcons').checked = false;
-            document.getElementById('displayGraphIcons').value   = 'false';
-            document.getElementById('showSecondaryTemp').checked = true;
-            document.getElementById('showSecondaryTemp').value   = 'true';
-            document.getElementById('wireframeMode').checked = false;
-            document.getElementById('wireframeMode').value   = 'false';
             document.getElementById('weatherTimeZone').value = 'locationTimeZone';
             addCalendarInput('', '#007BFF');
         }
@@ -294,5 +749,33 @@
         const radioEl = document.querySelector(`input[name="titleSelection"][value="${selectedTitle}"]`);
         if (radioEl) radioEl.checked = true;
         updateWeatherProviderUI(weatherProvider);
+        updateDependentOptions();
+
+        const settings = document.querySelector('.wa-settings');
+        settings.addEventListener('change', updateDependentOptions);
+
+        const form = settings.closest('form');
+        if (form) {
+            // Runs whenever the page gathers the form to save or preview it.
+            form.addEventListener('formdata', event => {
+                const data = event.formData;
+                // Switches are always sent, as "true" or "false".
+                settingSwitches().forEach(box => data.set(box.dataset.setting, box.checked ? 'true' : 'false'));
+                // Calendar rows left empty are not sent.
+                data.delete('calendarURLs[]');
+                data.delete('calendarColors[]');
+                document.querySelectorAll('#calendarList .calendar-entry').forEach(entry => {
+                    const url = entry.querySelector('input[name="calendarURLs[]"]').value.trim();
+                    if (!url) return;
+                    data.append('calendarURLs[]', url);
+                    data.append('calendarColors[]', entry.querySelector('input[name="calendarColors[]"]').value);
+                });
+            });
+            // The page resets the form after "Add to Playlist".
+            form.addEventListener('reset', () => setTimeout(() => {
+                updateWeatherProviderUI(document.getElementById('weatherProvider').value);
+                updateDependentOptions();
+            }));
+        }
     });
 </script>

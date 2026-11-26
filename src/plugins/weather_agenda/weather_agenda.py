@@ -87,6 +87,9 @@ OPEN_METEO_UNIT_PARAMS = {
 # First hour drawn in each agenda card's day chart. The chart ends at the midnight
 # that closes the day.
 DAY_CHART_START_HOUR = 6
+# Values of the "agendaForecastStyle" setting: what each agenda card shows beside its events.
+AGENDA_FORECAST_STYLE_CHART = "chart"      # one line of day stats over that day's chart
+AGENDA_FORECAST_STYLE_CLASSIC = "classic"  # three rows of stats and a large condition icon
 # (connect, read) seconds. urllib3 performs the TLS handshake inside connect(),
 # so a server that accepts TCP but never completes TLS is cut off by the
 # connect value; the read value bounds each wait for response data.
@@ -236,11 +239,18 @@ class WeatherAgenda(BasePlugin):
         # --- Attach forecast to agenda days by matching date ---
         forecast = template_params.get("forecast", [])
         forecast_by_date = {f["date"]: f for f in forecast if f.get("date")}
-        day_charts = template_params.get("day_charts", {})
+        # The cards' forecast box is the day chart unless the classic box is chosen.
+        show_day_charts = settings.get("agendaForecastStyle", AGENDA_FORECAST_STYLE_CHART) != AGENDA_FORECAST_STYLE_CLASSIC
+        day_charts = template_params.get("day_charts", {}) if show_day_charts else {}
         for day_group in template_params.get("agenda_events", []):
             day_group["forecast"] = forecast_by_date.get(day_group.get("date"))
             # That day's hourly chart; None when the provider has no hourly data for it.
             day_group["chart"] = day_charts.get(day_group.get("date")) if day_group["forecast"] else None
+        # Wind on the day charts has its own setting. Instances saved before it existed
+        # follow the hourly chart's wind setting.
+        template_params["agenda_chart_wind"] = (
+            settings.get("agendaChartWind", settings.get("displayGraphWind")) == "true"
+        )
 
         # --- Shared icon paths for agenda weather rows ---
         template_params["agenda_wx_icons"] = {

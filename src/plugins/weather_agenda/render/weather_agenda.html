@@ -318,7 +318,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (typeof Chart === 'undefined') return;
     const isNumber  = v => typeof v === 'number';
     const imperial  = document.getElementById('units-container').dataset.units === "imperial";
-    const drawWind  = "{{ plugin_settings.displayGraphWind }}" === "true";
+    const drawWind  = {{ 'true' if agenda_chart_wind else 'false' }};
     const ink       = "{{ plugin_settings.textColor }}";
     const windColor = withAlpha(ink, 0.4);
     const labelSize = Math.max(11, Math.round(window.innerHeight * 0.0125));

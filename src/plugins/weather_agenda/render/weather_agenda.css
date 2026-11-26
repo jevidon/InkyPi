@@ -420,6 +420,67 @@
   pointer-events: none;
 }
 
+/* --- Forecast box with a day chart: one line of day stats over that day's chart --- */
+.wa-agenda-day-wx--chart {
+  gap: 0;
+}
+
+.wa-wx-summary {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.45vw;
+  flex-shrink: 0;
+  /* Same height, rule and spacing as .wa-agenda-day-header beside it, so the
+     two rules read as one line across the card. */
+  height: calc(min(2.4dvh, 2.4vw) * 1.2 + 0.2dvh + 1px);
+  padding-bottom: 0.2dvh;
+  margin-bottom: 0.2dvh;
+  border-bottom: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+.wa-wx-summary-icon {
+  height: min(2.7dvh, 2.2vw);
+  width: auto;
+  min-width: 0;
+  object-fit: contain;
+  /* Gives way first when the three stats are at their widest. */
+  flex-shrink: 1;
+}
+
+.wa-wx-summary-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.2vw;
+  flex-shrink: 0;
+  font-size: min(1.5dvh, 1.3vw);
+  font-weight: bold;
+  line-height: 1;
+}
+
+.wa-wx-summary-item img {
+  height: 1em;
+  width: 1em;
+  object-fit: contain;
+}
+
+/* Fills what is left of the box. The inner wrapper gives the canvas a size that
+   does not depend on the canvas itself. */
+.wa-wx-chart {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  margin-top: 0.3dvh;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.35);
+}
+
+.wa-wx-chart-inner {
+  position: absolute;
+  inset: 0;
+}
+
 .wa-wx-icon {
   height: min(5.5dvh, 4vw);
   width: auto;

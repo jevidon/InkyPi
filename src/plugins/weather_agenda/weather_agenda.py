@@ -84,6 +84,9 @@ OPEN_METEO_UNIT_PARAMS = {
     "metric":   "temperature_unit=celsius&wind_speed_unit=kmh&precipitation_unit=mm",
     "imperial": "temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch",
 }
+# First hour drawn in each agenda card's day chart. The chart ends at the midnight
+# that closes the day.
+DAY_CHART_START_HOUR = 6
 # (connect, read) seconds. urllib3 performs the TLS handshake inside connect(),
 # so a server that accepts TCP but never completes TLS is cut off by the
 # connect value; the read value bounds each wait for response data.
@@ -233,8 +236,11 @@ class WeatherAgenda(BasePlugin):
         # --- Attach forecast to agenda days by matching date ---
         forecast = template_params.get("forecast", [])
         forecast_by_date = {f["date"]: f for f in forecast if f.get("date")}
+        day_charts = template_params.get("day_charts", {})
         for day_group in template_params.get("agenda_events", []):
             day_group["forecast"] = forecast_by_date.get(day_group.get("date"))
+            # That day's hourly chart; None when the provider has no hourly data for it.
+            day_group["chart"] = day_charts.get(day_group.get("date")) if day_group["forecast"] else None
 
         # --- Shared icon paths for agenda weather rows ---
         template_params["agenda_wx_icons"] = {
@@ -884,6 +890,7 @@ class WeatherAgenda(BasePlugin):
             hourly_data, units, tz, time_format,
             daily.get("sunrise", []), daily.get("sunset", [])
         )
+        data["day_charts"] = self._parse_open_meteo_day_charts(hourly_data, units)
         times = hourly_data.get("time", [])
         sun_dt_list = []
         for sr_s in daily.get("sunrise", []):
@@ -1033,6 +1040,48 @@ class WeatherAgenda(BasePlugin):
                 "icon": self.get_plugin_dir(f"icons/{icon_name}.png"),
             })
         return hourly
+
+    def _parse_open_meteo_day_charts(self, hourly_data, units):
+        """Hourly series for the chart in each agenda card, keyed by ISO date.
+
+        A day runs from DAY_CHART_START_HOUR to the midnight that ends it. Days the
+        hourly data does not cover in full are left out, and their cards fall back to
+        the plain forecast summary.
+        """
+        index_by_time = {}
+        for i, time_str in enumerate(hourly_data.get("time", [])):
+            try:
+                index_by_time[datetime.fromisoformat(time_str)] = i
+            except (TypeError, ValueError):
+                continue
+
+        def number(key, index):
+            values = hourly_data.get(key, [])
+            value = values[index] if index < len(values) else None
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return None
+            return value
+
+        temp_offset = 273.15 if units == "standard" else 0.0
+        charts = {}
+        for day in sorted({dt.date() for dt in index_by_time}):
+            first_hour = datetime.combine(day, time_type(DAY_CHART_START_HOUR))
+            hours = [first_hour + timedelta(hours=h) for h in range(24 - DAY_CHART_START_HOUR + 1)]
+            indices = [index_by_time.get(hour) for hour in hours]
+            if any(index is None for index in indices):
+                continue
+            temperatures = [number("temperature_2m", index) for index in indices]
+            if any(t is None for t in temperatures):
+                continue
+            charts[day.isoformat()] = {
+                "temperature": [round(t + temp_offset, 1) for t in temperatures],
+                "rain": [round(number("precipitation", index) or 0, 2) for index in indices],
+                "uv": [round(number("uv_index", index) or 0, 1) for index in indices],
+                # Already in km/h or mph, as requested through OPEN_METEO_UNIT_PARAMS.
+                "wind": [self._hourly_wind(number("wind_speed_10m", index)) for index in indices],
+                "gust": [self._hourly_wind(number("wind_gusts_10m", index)) for index in indices],
+            }
+        return charts
 
     def _parse_open_meteo_data_points(self, weather_data, aqi_data, units, tz, time_format):
         data_points = []

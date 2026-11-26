@@ -196,7 +196,7 @@
               </div>
 
               {% if day_group.forecast %}
-              <div class="wa-agenda-day-wx{% if day_group.chart %} wa-agenda-day-wx--chart{% endif %}" {% if plugin_settings.wireframeMode == "true" %}data-dbg="{{ day_group.forecast.icon.split('/') | last }}"{% endif %}>
+              <div class="wa-agenda-day-wx{% if day_group.chart %} wa-agenda-day-wx--chart{% elif day_group.details %} wa-agenda-day-wx--timed{% endif %}" {% if plugin_settings.wireframeMode == "true" %}data-dbg="{{ day_group.forecast.icon.split('/') | last }}"{% endif %}>
                 {% if day_group.chart %}
                 <!-- Day stats on one line, ruled to match the day header, over that day's chart -->
                 <div class="wa-wx-summary">
@@ -208,6 +208,28 @@
                 <div class="wa-wx-chart">
                   <div class="wa-wx-chart-inner">
                     <canvas class="wa-day-chart" data-chart='{{ day_group.chart | tojson }}'{% if day_group.forecast.rain_amount %} data-rain-label="{{ day_group.forecast.rain_amount }} {{ day_group.forecast.rain_unit }}"{% endif %}></canvas>
+                  </div>
+                </div>
+                {% elif day_group.details %}
+                <!-- An outlook line beside the day's icon at the top; UV, then rain and wind with when, at the bottom -->
+                <div class="wa-wx-outlook">
+                  <img class="wa-wx-outlook-icon" src="{{ day_group.forecast.icon }}" alt="">
+                  <span class="wa-wx-outlook-text">{{ day_group.details.outlook }}</span>
+                </div>
+                <div class="wa-wx-timed">
+                  <div class="wa-wx-timed-row">
+                    <img src="{{ agenda_wx_icons.uvi }}" alt="">
+                    <span class="wa-wx-timed-value">UV {{ day_group.forecast.uvi }}</span>
+                  </div>
+                  <div class="wa-wx-timed-row">
+                    <img src="{{ agenda_wx_icons.precip }}" alt="Precip">
+                    <span class="wa-wx-timed-value">{{ day_group.forecast.rain_pct }}%</span>
+                    <span class="wa-wx-timed-detail">{{ day_group.details.rain }}</span>
+                  </div>
+                  <div class="wa-wx-timed-row">
+                    <img src="{{ agenda_wx_icons.wind }}" alt="Wind">
+                    <span class="wa-wx-timed-value">{{ day_group.forecast.wind_speed }} {{ day_group.forecast.wind_unit | replace("km/h", "kph") }}</span>
+                    <span class="wa-wx-timed-detail">{{ day_group.details.wind }}</span>
                   </div>
                 </div>
                 {% else %}

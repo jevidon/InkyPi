@@ -423,6 +423,85 @@
   inset: 0;
 }
 
+/* --- Forecast box with timed metrics: an outlook line at the top; rain and wind
+       with when they happen, and UV, at the bottom --- */
+.wa-agenda-day-wx--timed {
+  justify-content: space-between;
+  gap: 0.6dvh;
+  padding-bottom: 0.3dvh;
+}
+
+/* Top-aligned, so a one-line outlook sits where a two-line one starts. */
+.wa-wx-outlook {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.5vw;
+}
+
+.wa-wx-outlook-icon {
+  height: min(3.7dvh, 3vw);
+  width: auto;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+/* Up to three lines; a longer outlook is cut short rather than pushing the rows down.
+   The first line is centred on the day label's line beside it: half the difference
+   between that line's height and this one's. */
+.wa-wx-outlook-text {
+  font-size: min(1.45dvh, 1.2vw);
+  font-weight: 600;
+  line-height: 1.15;
+  margin-top: calc((min(2.4dvh, 2.4vw) * 1.2 - min(1.45dvh, 1.2vw) * 1.15) / 2);
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.wa-wx-timed {
+  display: flex;
+  flex-direction: column;
+  gap: 1dvh;
+}
+
+/* Each detail follows its own value, so a short value leaves the detail more room. */
+.wa-wx-timed-row {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.3vw;
+  min-width: 0;
+}
+
+.wa-wx-timed img {
+  height: min(1.7dvh, 1.4vw);
+  width: min(1.7dvh, 1.4vw);
+  object-fit: contain;
+  align-self: center;
+  flex-shrink: 0;
+}
+
+.wa-wx-timed-value {
+  font-size: min(1.55dvh, 1.3vw);
+  font-weight: bold;
+  white-space: nowrap;
+  line-height: 1.2;
+  flex-shrink: 0;
+}
+
+.wa-wx-timed-detail {
+  font-size: min(1.25dvh, 1.05vw);
+  opacity: 0.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+  min-width: 0;
+}
+
 .wa-wx-icon {
   height: min(5.5dvh, 4vw);
   width: auto;

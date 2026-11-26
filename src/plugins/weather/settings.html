@@ -198,6 +198,9 @@
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
         gap: 12px;
+        /* An explicit width, so the stacked row sizes the grid with its real column
+           count; without it the cards are as tall as if they sat in one column. */
+        width: 100%;
     }
 
     .ws-choice {
@@ -237,6 +240,17 @@
         border-radius: 6px;
         background-color: #ffffff;
         color: #333333;
+    }
+
+    /* Three or more narrower choices: the picture sits above its text. */
+    .ws-choices--stacked {
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+
+    .ws-choices--stacked .ws-choice-body {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
     }
 
     .ws-choice-art--screen {
@@ -526,7 +540,7 @@
                 <span class="ws-row-label" id="forecastStyleLabel">Forecast box</span>
                 <span class="ws-row-hint">What each day card shows beside its events.</span>
             </div>
-            <div class="ws-choices" role="radiogroup" aria-labelledby="forecastStyleLabel">
+            <div class="ws-choices ws-choices--stacked" role="radiogroup" aria-labelledby="forecastStyleLabel">
                 <label class="ws-choice">
                     <input type="radio" name="agendaForecastStyle" value="chart" checked>
                     <span class="ws-choice-body">
@@ -565,6 +579,30 @@
                         <span>
                             <span class="ws-choice-name">Summary<span class="ws-choice-mark">Selected</span></span>
                             <span class="ws-row-hint">Rain chance, wind and UV on three rows with a large weather icon.</span>
+                        </span>
+                    </span>
+                </label>
+                <label class="ws-choice">
+                    <input type="radio" name="agendaForecastStyle" value="timed">
+                    <span class="ws-choice-body">
+                        <svg class="ws-choice-art" viewBox="0 0 112 60" aria-hidden="true">
+                            <circle cx="12" cy="12" r="6" fill="#2f7fc4"/>
+                            <circle cx="19" cy="14" r="5.5" fill="#9ccbf0"/>
+                            <rect x="30" y="7" width="46" height="5" rx="2.5" fill="currentColor" opacity="0.75"/>
+                            <rect x="30" y="15" width="30" height="5" rx="2.5" fill="currentColor" opacity="0.75"/>
+                            <circle cx="10" cy="30" r="3.5" fill="#4a9bd8"/>
+                            <rect x="17" y="27.5" width="14" height="5" rx="2.5" fill="currentColor" opacity="0.75"/>
+                            <rect x="35" y="28" width="40" height="4" rx="2" fill="currentColor" opacity="0.35"/>
+                            <circle cx="10" cy="41" r="3.5" fill="#4a9bd8"/>
+                            <rect x="17" y="38.5" width="18" height="5" rx="2.5" fill="currentColor" opacity="0.75"/>
+                            <rect x="39" y="39" width="32" height="4" rx="2" fill="currentColor" opacity="0.35"/>
+                            <circle cx="10" cy="52" r="3.5" fill="#e8a13a"/>
+                            <rect x="17" y="49.5" width="8" height="5" rx="2.5" fill="currentColor" opacity="0.75"/>
+                            <rect x="29" y="50" width="44" height="4" rx="2" fill="currentColor" opacity="0.35"/>
+                        </svg>
+                        <span>
+                            <span class="ws-choice-name">Timed metrics<span class="ws-choice-mark">Selected</span></span>
+                            <span class="ws-row-hint">A one-line outlook, then rain, wind and UV with when they happen.</span>
                         </span>
                     </span>
                 </label>
@@ -956,7 +994,8 @@
                 }
             });
 
-            const forecastStyle = pluginSettings.agendaForecastStyle === 'summary' ? 'summary' : 'chart';
+            const forecastStyle = ['summary', 'timed'].includes(pluginSettings.agendaForecastStyle)
+                ? pluginSettings.agendaForecastStyle : 'chart';
             document.querySelector(`.ws-settings input[name="agendaForecastStyle"][value="${forecastStyle}"]`).checked = true;
 
             selectedTitle   = pluginSettings.titleSelection || 'location';

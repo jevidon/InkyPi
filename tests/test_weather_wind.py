@@ -8,16 +8,16 @@ import pytz
 # so src/ must be importable the same way it is at runtime.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src"))
 
-from plugins.weather_agenda.weather_agenda import (  # noqa: E402
+from plugins.weather.weather import (  # noqa: E402
     OPEN_METEO_FORECAST_URL,
-    WeatherAgenda,
+    Weather,
 )
 
 TZ = pytz.timezone("America/New_York")
 
 
 def _plugin():
-    return WeatherAgenda({"id": "weather_agenda"})
+    return Weather({"id": "weather"})
 
 
 def _open_meteo_hourly(**extra):
@@ -84,7 +84,7 @@ class TestHourlyWindData:
 
     def test_owm_hourly_wind_is_converted_from_metres_per_second(self):
         hourly = _plugin()._parse_owm_hourly(
-            [_owm_hour(wind_speed=5, wind_gust=10)], TZ, "12h", "metric", OWM_DAILY
+            [_owm_hour(wind_speed=5, wind_gust=10)], TZ, "12h", "metric", "km/h", OWM_DAILY
         )
 
         assert hourly[0]["wind_speed"] == 18
@@ -92,7 +92,7 @@ class TestHourlyWindData:
 
     def test_owm_hourly_wind_stays_in_mph_for_imperial(self):
         hourly = _plugin()._parse_owm_hourly(
-            [_owm_hour(wind_speed=5, wind_gust=10)], TZ, "12h", "imperial", OWM_DAILY
+            [_owm_hour(wind_speed=5, wind_gust=10)], TZ, "12h", "imperial", "mph", OWM_DAILY
         )
 
         assert hourly[0]["wind_speed"] == 5
@@ -100,7 +100,7 @@ class TestHourlyWindData:
 
     def test_owm_hour_without_gust_gives_none(self):
         hourly = _plugin()._parse_owm_hourly(
-            [_owm_hour(wind_speed=5)], TZ, "12h", "metric", OWM_DAILY
+            [_owm_hour(wind_speed=5)], TZ, "12h", "metric", "km/h", OWM_DAILY
         )
 
         assert hourly[0]["wind_speed"] == 18
@@ -119,7 +119,7 @@ class TestWindChartTemplate:
     def _render(self, hours=None, **plugin_settings):
         settings = {"displayGraph": "true", "textColor": "#000000", "backgroundColor": "#ffffff"}
         settings.update(plugin_settings)
-        return _plugin().env.get_template("weather_agenda.html").render(
+        return _plugin().env.get_template("agenda.html").render(
             plugin_settings=settings, units="metric", current_temperature="10",
             hourly_forecast=self.HOURS if hours is None else hours,
         )

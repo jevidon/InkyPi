@@ -1,121 +1,727 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
-<div class="form-group">
-    <label class="form-label">Location: </label>
-    <div class="form-group">
-        <span>Latitude </span>
-        <input type="text" id="latitude" name="latitude" class="form-input" />
-    </div>
-    <div class="form-group">
-        <span>Longitude </span>
-        <input type="text" id="longitude" name="longitude" class="form-input" />
-    </div>
-    <button type="button" id="openMap" class="action-button compact">Select Location</button>
+<style>
+    /* Settings are grouped by the part of the screen they change. Each row has a
+       name and a one-line explanation on the left and its control on the right.
+       Rows and sections marked data-layout only show for that layout. */
+    .ws-settings {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        margin: 6px 0 4px;
+        color: var(--text-primary);
+    }
+
+    .ws-settings [hidden] {
+        display: none !important;
+    }
+
+    .ws-section {
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        padding: 12px 16px 4px;
+    }
+
+    .ws-section-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+    }
+
+    .ws-section-hint,
+    .ws-row-hint {
+        display: block;
+        font-size: 0.85rem;
+        line-height: 1.35;
+        color: var(--text-secondary);
+    }
+
+    .ws-section-hint {
+        margin: 2px 0 6px;
+    }
+
+    .ws-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px 20px;
+        padding: 11px 0;
+        border-top: 1px solid var(--border-color);
+    }
+
+    /* Rows whose control needs the full width sit under their name. */
+    .ws-row--stack {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .ws-row-text {
+        flex: 1 1 240px;
+        min-width: 0;
+    }
+
+    .ws-row--stack .ws-row-text {
+        flex: none;
+    }
+
+    .ws-row-label {
+        display: block;
+        font-weight: 600;
+        cursor: default;
+    }
+
+    label.ws-row-label {
+        cursor: pointer;
+    }
+
+    .ws-row-hint a {
+        color: var(--accent-hover);
+    }
+
+    .ws-row-control {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 10px;
+    }
+
+    .ws-row-control select.form-input {
+        flex: none;
+        min-width: 11rem;
+    }
+
+    .ws-row-control .ws-inline-select {
+        min-width: 0;
+    }
+
+    /* Options that only apply while the switch above them is on. */
+    .ws-sub {
+        margin-left: 14px;
+        padding-left: 14px;
+        border-left: 2px solid var(--border-color);
+    }
+
+    .ws-dim {
+        opacity: 0.45;
+    }
+
+    /* On/off switch drawn on a plain checkbox, so it keeps keyboard and label behaviour. */
+    .ws-switch {
+        -webkit-appearance: none;
+        appearance: none;
+        flex: none;
+        position: relative;
+        width: 46px;
+        height: 26px;
+        border-radius: 13px;
+        background-color: var(--border-light);
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+    }
+
+    .ws-switch::before {
+        content: "";
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background-color: #ffffff;
+        box-shadow: 0 1px 2px var(--shadow-medium);
+        transition: transform 0.2s ease;
+    }
+
+    .ws-switch:checked {
+        background-color: var(--accent-primary);
+    }
+
+    .ws-switch:checked::before {
+        transform: translateX(20px);
+    }
+
+    .ws-switch:focus-visible,
+    .ws-choice input:focus-visible + .ws-choice-body,
+    .ws-secondary-button:focus-visible {
+        outline: 2px solid var(--accent-primary);
+        outline-offset: 2px;
+    }
+
+    /* Location: two coordinates, typed or set from the map. */
+    .ws-location {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: 10px;
+    }
+
+    .ws-field {
+        flex: 1 1 150px;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+    }
+
+    .ws-field .form-input {
+        width: 100%;
+        padding: 0.5rem;
+    }
+
+    .ws-location .action-button {
+        flex: none;
+    }
+
+    .ws-title-choice {
+        display: flex;
+        align-items: center;
+        gap: 6px 14px;
+        flex-wrap: wrap;
+    }
+
+    .ws-title-choice label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+    }
+
+    .ws-title-input {
+        width: 100%;
+        padding: 0.5rem;
+    }
+
+    /* Picture choices: the layout and the agenda's forecast box. */
+    .ws-choices {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+    }
+
+    .ws-choice {
+        position: relative;
+        display: block;
+        cursor: pointer;
+    }
+
+    .ws-choice input {
+        position: absolute;
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+
+    .ws-choice-body {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        height: 100%;
+        padding: 10px 12px;
+        border: 2px solid var(--border-color);
+        border-radius: 10px;
+        background-color: var(--input-bg);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .ws-choice input:checked + .ws-choice-body {
+        border-color: var(--accent-primary);
+        box-shadow: 0 0 0 2px var(--input-focus);
+    }
+
+    .ws-choice-art {
+        flex: none;
+        width: 112px;
+        height: 60px;
+        border-radius: 6px;
+        background-color: #ffffff;
+        color: #333333;
+    }
+
+    .ws-choice-art--screen {
+        height: 70px;
+    }
+
+    .ws-choice-name {
+        display: block;
+        font-weight: 600;
+    }
+
+    .ws-choice-mark {
+        display: none;
+        margin-left: 6px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--accent-hover);
+    }
+
+    .ws-choice input:checked + .ws-choice-body .ws-choice-mark {
+        display: inline;
+    }
+
+    /* Calendars */
+    #calendarList {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    #calendarList:empty::before {
+        content: "No calendars yet. Without one, the day cards are not shown.";
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+    }
+
+    .ws-calendar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .ws-calendar .form-input {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 0.5rem;
+    }
+
+    .ws-calendar .color-picker {
+        flex: none;
+        width: 36px;
+        height: 36px;
+    }
+
+    .ws-calendar .remove-btn {
+        flex: none;
+        margin-left: 0;
+        padding: 6px 8px;
+    }
+
+    .ws-secondary-button {
+        align-self: flex-start;
+        padding: 8px 14px;
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        background-color: var(--button-bg);
+        border: 1px solid var(--border-light);
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+    }
+
+    .ws-secondary-button:hover {
+        background-color: var(--button-hover);
+    }
+
+    /* Rarely needed settings, folded away. */
+    .ws-advanced > summary {
+        padding: 2px 0 10px;
+        font-size: 1.1rem;
+        font-weight: 700;
+        cursor: pointer;
+    }
+</style>
+
+<div class="ws-settings">
+
+    <!-- ===== Layout ===== -->
+    <section class="ws-section">
+        <h2 class="ws-section-title" id="layoutLabel">Layout</h2>
+        <p class="ws-section-hint">How the screen is arranged. The settings below change to match.</p>
+        <div class="ws-row">
+            <div class="ws-choices" role="radiogroup" aria-labelledby="layoutLabel" style="flex: 1 1 100%;">
+                <label class="ws-choice">
+                    <input type="radio" name="layout" value="classic" checked>
+                    <span class="ws-choice-body">
+                        <svg class="ws-choice-art ws-choice-art--screen" viewBox="0 0 112 70" aria-hidden="true">
+                            <rect x="38" y="5" width="36" height="5" rx="2.5" fill="currentColor" opacity="0.7"/>
+                            <circle cx="15" cy="22" r="7" fill="#2f7fc4"/>
+                            <circle cx="23" cy="24" r="6" fill="#9ccbf0"/>
+                            <rect x="32" y="16" width="10" height="12" rx="2" fill="currentColor" opacity="0.8"/>
+                            <rect x="50" y="15" width="24" height="4" rx="2" fill="currentColor" opacity="0.4"/>
+                            <rect x="80" y="15" width="24" height="4" rx="2" fill="currentColor" opacity="0.4"/>
+                            <rect x="50" y="22" width="24" height="4" rx="2" fill="currentColor" opacity="0.4"/>
+                            <rect x="80" y="22" width="24" height="4" rx="2" fill="currentColor" opacity="0.4"/>
+                            <path d="M6 48 C 26 48, 34 35, 56 35 S 92 42, 106 46 L 106 48 Z" fill="#fccc05"/>
+                            <path d="M6 48 C 26 48, 34 35, 56 35 S 92 42, 106 46" fill="none" stroke="#f17a24" stroke-width="1.5"/>
+                            <g fill="none" stroke="currentColor" stroke-width="1" opacity="0.6">
+                                <rect x="6" y="53" width="12" height="13" rx="2"/><rect x="21" y="53" width="12" height="13" rx="2"/>
+                                <rect x="36" y="53" width="12" height="13" rx="2"/><rect x="51" y="53" width="12" height="13" rx="2"/>
+                                <rect x="66" y="53" width="12" height="13" rx="2"/><rect x="81" y="53" width="12" height="13" rx="2"/>
+                                <rect x="96" y="53" width="10" height="13" rx="2"/>
+                            </g>
+                        </svg>
+                        <span>
+                            <span class="ws-choice-name">Classic<span class="ws-choice-mark">Selected</span></span>
+                            <span class="ws-row-hint">Current conditions with a grid of metrics, an hourly chart and a row of days ahead.</span>
+                        </span>
+                    </span>
+                </label>
+                <label class="ws-choice">
+                    <input type="radio" name="layout" value="agenda">
+                    <span class="ws-choice-body">
+                        <svg class="ws-choice-art ws-choice-art--screen" viewBox="0 0 112 70" aria-hidden="true">
+                            <rect x="5" y="5" width="34" height="6" rx="3" fill="currentColor" opacity="0.7"/>
+                            <rect x="5" y="14" width="18" height="3" rx="1.5" fill="currentColor" opacity="0.4"/>
+                            <circle cx="26" cy="27" r="7" fill="#2f7fc4"/>
+                            <circle cx="35" cy="30" r="7" fill="#9ccbf0"/>
+                            <rect x="7" y="34" width="11" height="12" rx="2" fill="currentColor" opacity="0.8"/>
+                            <g fill="none" stroke="currentColor" stroke-width="1" opacity="0.6">
+                                <rect x="58" y="4" width="49" height="10" rx="3"/><rect x="58" y="16" width="49" height="10" rx="3"/>
+                                <rect x="58" y="28" width="49" height="10" rx="3"/><rect x="58" y="40" width="49" height="10" rx="3"/>
+                            </g>
+                            <rect x="61" y="7" width="20" height="2.5" rx="1.2" fill="#2e9e5b"/>
+                            <rect x="61" y="19" width="26" height="2.5" rx="1.2" fill="#2563eb"/>
+                            <path d="M6 66 C 26 66, 34 54, 56 54 S 92 60, 106 64 L 106 66 Z" fill="#fccc05"/>
+                            <path d="M6 66 C 26 66, 34 54, 56 54 S 92 60, 106 64" fill="none" stroke="#f17a24" stroke-width="1.5"/>
+                        </svg>
+                        <span>
+                            <span class="ws-choice-name">Agenda<span class="ws-choice-mark">Selected</span></span>
+                            <span class="ws-row-hint">Current conditions beside a card for each of the next four days, with your calendar events.</span>
+                        </span>
+                    </span>
+                </label>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== Weather: where the forecast is for and how it is measured ===== -->
+    <section class="ws-section">
+        <h2 class="ws-section-title">Weather</h2>
+        <p class="ws-section-hint">Where the forecast is for, and how it is measured.</p>
+
+        <div class="ws-row ws-row--stack">
+            <div class="ws-row-text">
+                <span class="ws-row-label">Location</span>
+                <span class="ws-row-hint">Type the coordinates, or pick the place on a map.</span>
+            </div>
+            <div class="ws-location">
+                <label class="ws-field">Latitude
+                    <input type="text" id="latitude" name="latitude" class="form-input" placeholder="For example: 40.71" inputmode="decimal" />
+                </label>
+                <label class="ws-field">Longitude
+                    <input type="text" id="longitude" name="longitude" class="form-input" placeholder="For example: -74.01" inputmode="decimal" />
+                </label>
+                <button type="button" id="openMap" class="action-button compact">Choose on map</button>
+            </div>
+        </div>
+
+        <div class="ws-row">
+            <div class="ws-row-text">
+                <label for="weatherProvider" class="ws-row-label">Weather provider</label>
+                <span class="ws-row-hint" id="providerHint"></span>
+            </div>
+            <div class="ws-row-control">
+                <select id="weatherProvider" name="weatherProvider" class="form-input" onchange="updateWeatherProviderUI(this.value)">
+                    <option value="OpenMeteo">Open-Meteo</option>
+                    <option value="OpenWeatherMap">OpenWeatherMap</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="ws-row">
+            <div class="ws-row-text">
+                <label for="weatherTimeZone" class="ws-row-label">Time zone</label>
+                <span class="ws-row-hint">Whose clock the weather times follow, such as sunrise and the hourly chart.</span>
+            </div>
+            <div class="ws-row-control">
+                <select id="weatherTimeZone" name="weatherTimeZone" class="form-input">
+                    <option value="locationTimeZone">The location's time zone</option>
+                    <option value="localTimeZone">This device's time zone</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="ws-row">
+            <div class="ws-row-text">
+                <label for="units" class="ws-row-label">Units</label>
+                <span class="ws-row-hint">Used for temperature, rain and visibility.</span>
+            </div>
+            <div class="ws-row-control">
+                <select id="units" name="units" class="form-input">
+                    <option value="imperial">Imperial (°F)</option>
+                    <option value="metric">Metric (°C)</option>
+                    <option value="standard">Standard (K)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="ws-row">
+            <div class="ws-row-text">
+                <label for="windUnit" class="ws-row-label">Wind speed</label>
+                <span class="ws-row-hint">Used wherever wind is shown.</span>
+            </div>
+            <div class="ws-row-control">
+                <select id="windUnit" name="windUnit" class="form-input">
+                    <option value="mph">Miles per hour (mph)</option>
+                    <option value="km/h">Kilometres per hour (km/h)</option>
+                    <option value="m/s">Metres per second (m/s)</option>
+                </select>
+            </div>
+        </div>
+
+    </section>
+
+    <!-- ===== Heading: title, date and refresh time ===== -->
+    <section class="ws-section">
+        <h2 class="ws-section-title">Heading</h2>
+        <p class="ws-section-hint">The title and date at the top of the screen.</p>
+
+        <div class="ws-row ws-row--stack" id="titleOptionWrapper">
+            <div class="ws-row-text">
+                <label for="customTitle" class="ws-row-label">Title</label>
+                <span class="ws-row-hint">An optional line beside the date. Leave it empty for none.</span>
+            </div>
+            <div class="ws-title-choice" data-owm-only>
+                <label for="title-location"><input type="radio" id="title-location" name="titleSelection" value="location"> Use the location's name</label>
+                <label for="title-custom"><input type="radio" id="title-custom" name="titleSelection" value="custom"> Use my own text</label>
+            </div>
+            <input type="text" id="customTitle" name="customTitle" class="form-input ws-title-input" placeholder="For example: Home" />
+        </div>
+
+        <div class="ws-row">
+            <div class="ws-row-text">
+                <label for="displayRefreshTime" class="ws-row-label">Last refresh time</label>
+                <span class="ws-row-hint">Shows when the screen last refreshed.</span>
+            </div>
+            <div class="ws-row-control">
+                <input type="checkbox" class="ws-switch" id="displayRefreshTime" data-setting="displayRefreshTime" checked>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== Current conditions (classic) ===== -->
+    <section class="ws-section" data-layout="classic">
+        <h2 class="ws-section-title">Current conditions</h2>
+        <p class="ws-section-hint">The weather now, beside the current temperature.</p>
+
+        <div class="ws-row">
+            <div class="ws-row-text">
+                <label for="displayMetrics" class="ws-row-label">Metrics</label>
+                <span class="ws-row-hint">Sunrise, sunset, wind, humidity, pressure, UV index, visibility and air quality.</span>
+            </div>
+            <div class="ws-row-control">
+                <input type="checkbox" class="ws-switch" id="displayMetrics" data-setting="displayMetrics" checked>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== Agenda: the day cards (agenda) ===== -->
+    <section class="ws-section" data-layout="agenda">
+        <h2 class="ws-section-title">Agenda</h2>
+        <p class="ws-section-hint">The day cards down the right-hand side: your events with each day's forecast.</p>
+
+        <div class="ws-row ws-row--stack">
+            <div class="ws-row-text">
+                <span class="ws-row-label">Calendars</span>
+                <span class="ws-row-hint">Paste each calendar's iCal (.ics) link. The colour marks that calendar's events. Events follow this device's time zone.</span>
+            </div>
+            <div id="calendarList"></div>
+            <button type="button" id="addCalendarBtn" class="ws-secondary-button" onclick="addCalendarInput('', '#007BFF', true)">+ Add calendar</button>
+        </div>
+
+        <div class="ws-row ws-row--stack">
+            <div class="ws-row-text">
+                <span class="ws-row-label" id="forecastStyleLabel">Forecast box</span>
+                <span class="ws-row-hint">What each day card shows beside its events.</span>
+            </div>
+            <div class="ws-choices" role="radiogroup" aria-labelledby="forecastStyleLabel">
+                <label class="ws-choice">
+                    <input type="radio" name="agendaForecastStyle" value="chart" checked>
+                    <span class="ws-choice-body">
+                        <svg class="ws-choice-art" viewBox="0 0 112 60" aria-hidden="true">
+                            <circle cx="12" cy="10" r="5" fill="#4a9bd8"/>
+                            <rect x="23" y="7" width="18" height="6" rx="3" fill="currentColor" opacity="0.6"/>
+                            <rect x="47" y="7" width="14" height="6" rx="3" fill="currentColor" opacity="0.6"/>
+                            <rect x="67" y="7" width="10" height="6" rx="3" fill="currentColor" opacity="0.6"/>
+                            <line x1="6" y1="19" x2="106" y2="19" stroke="currentColor" stroke-width="1"/>
+                            <path d="M6 56 C 26 56, 34 25, 56 25 S 92 42, 106 52 L 106 56 Z" fill="#fccc05"/>
+                            <path d="M30 56 C 40 56, 44 38, 52 38 S 64 56, 74 56 Z" fill="#f59e0b"/>
+                            <path d="M6 56 C 26 56, 34 25, 56 25 S 92 42, 106 52" fill="none" stroke="#f17a24" stroke-width="2"/>
+                            <path d="M6 46 C 40 44, 62 34, 106 42" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.5"/>
+                            <line x1="6" y1="56.5" x2="106" y2="56.5" stroke="currentColor" stroke-width="1" opacity="0.4"/>
+                        </svg>
+                        <span>
+                            <span class="ws-choice-name">Day chart<span class="ws-choice-mark">Selected</span></span>
+                            <span class="ws-row-hint">One line of stats over that day's temperature, UV, rain and wind.</span>
+                        </span>
+                    </span>
+                </label>
+                <label class="ws-choice">
+                    <input type="radio" name="agendaForecastStyle" value="summary">
+                    <span class="ws-choice-body">
+                        <svg class="ws-choice-art" viewBox="0 0 112 60" aria-hidden="true">
+                            <circle cx="12" cy="11" r="4.5" fill="#4a9bd8"/>
+                            <rect x="22" y="8" width="24" height="6" rx="3" fill="currentColor" opacity="0.6"/>
+                            <circle cx="12" cy="25" r="4.5" fill="#4a9bd8"/>
+                            <rect x="22" y="22" width="34" height="6" rx="3" fill="currentColor" opacity="0.6"/>
+                            <circle cx="12" cy="39" r="4.5" fill="#e8a13a"/>
+                            <rect x="22" y="36" width="12" height="6" rx="3" fill="currentColor" opacity="0.6"/>
+                            <circle cx="76" cy="40" r="11" fill="#2f7fc4"/>
+                            <circle cx="92" cy="43" r="10" fill="#9ccbf0"/>
+                            <rect x="66" y="43" width="36" height="10" rx="5" fill="#9ccbf0"/>
+                        </svg>
+                        <span>
+                            <span class="ws-choice-name">Summary<span class="ws-choice-mark">Selected</span></span>
+                            <span class="ws-row-hint">Rain chance, wind and UV on three rows with a large weather icon.</span>
+                        </span>
+                    </span>
+                </label>
+            </div>
+        </div>
+
+        <div class="ws-row" id="agendaChartWindRow">
+            <div class="ws-row-text">
+                <label for="agendaChartWind" class="ws-row-label">Wind on day charts</label>
+                <span class="ws-row-hint">A solid line for wind and a dashed line for gusts on each day's chart.</span>
+            </div>
+            <div class="ws-row-control">
+                <input type="checkbox" class="ws-switch" id="agendaChartWind" data-setting="agendaChartWind" checked>
+            </div>
+        </div>
+
+        <div class="ws-row">
+            <div class="ws-row-text">
+                <label for="showSecondaryTemp" class="ws-row-label">Second temperature unit</label>
+                <span class="ws-row-hint">Adds the other unit in brackets, like 9°C (48°F), to the current temperature and each day's high and low.</span>
+            </div>
+            <div class="ws-row-control">
+                <input type="checkbox" class="ws-switch" id="showSecondaryTemp" data-setting="showSecondaryTemp" checked>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== Hourly chart ===== -->
+    <section class="ws-section">
+        <h2 class="ws-section-title">Hourly chart</h2>
+        <p class="ws-section-hint">The next 24 hours of temperature and rain as a chart.</p>
+
+        <div class="ws-row">
+            <div class="ws-row-text">
+                <label for="displayGraph" class="ws-row-label">Show the hourly chart</label>
+                <span class="ws-row-hint">Turn off to give its space to the rest of the screen.</span>
+            </div>
+            <div class="ws-row-control">
+                <input type="checkbox" class="ws-switch" id="displayGraph" data-setting="displayGraph">
+            </div>
+        </div>
+
+        <div class="ws-sub" id="hourlyOptions">
+            <div class="ws-row">
+                <div class="ws-row-text">
+                    <label for="displayRain" class="ws-row-label">Rain amounts</label>
+                    <span class="ws-row-hint">Writes the amount on each hour's rain bar.</span>
+                </div>
+                <div class="ws-row-control">
+                    <input type="checkbox" class="ws-switch" id="displayRain" data-setting="displayRain">
+                </div>
+            </div>
+
+            <div class="ws-row" data-layout="agenda">
+                <div class="ws-row-text">
+                    <label for="displayGraphWind" class="ws-row-label">Wind and gusts</label>
+                    <span class="ws-row-hint">A solid line for wind and a dashed line for gusts, with their peaks beside the left axis.</span>
+                </div>
+                <div class="ws-row-control">
+                    <input type="checkbox" class="ws-switch" id="displayGraphWind" data-setting="displayGraphWind">
+                </div>
+            </div>
+
+            <div class="ws-row">
+                <div class="ws-row-text">
+                    <label for="displayGraphIcons" class="ws-row-label">Weather icons</label>
+                    <span class="ws-row-hint">A small weather icon under the chart at regular steps.</span>
+                </div>
+                <div class="ws-row-control">
+                    <span class="ws-row-control" id="graphIconStepWrap">
+                        <label for="graphIconStep">every</label>
+                        <select id="graphIconStep" name="graphIconStep" class="form-input ws-inline-select">
+                            <option value="1">1 hour</option>
+                            <option value="2" selected>2 hours</option>
+                            <option value="4">4 hours</option>
+                            <option value="6">6 hours</option>
+                            <option value="12">12 hours</option>
+                        </select>
+                    </span>
+                    <input type="checkbox" class="ws-switch" id="displayGraphIcons" data-setting="displayGraphIcons">
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== Daily forecast (classic) ===== -->
+    <section class="ws-section" data-layout="classic">
+        <h2 class="ws-section-title">Daily forecast</h2>
+        <p class="ws-section-hint">The row of days ahead along the bottom of the screen.</p>
+
+        <div class="ws-row">
+            <div class="ws-row-text">
+                <label for="displayForecast" class="ws-row-label">Show the daily forecast</label>
+                <span class="ws-row-hint">Each day's weather icon with its high and low.</span>
+            </div>
+            <div class="ws-row-control">
+                <span class="ws-row-control" id="forecastDaysWrap">
+                    <label for="forecastDays">for</label>
+                    <select id="forecastDays" name="forecastDays" class="form-input ws-inline-select">
+                        <option value="3">3 days</option>
+                        <option value="5">5 days</option>
+                        <option value="7" selected>7 days</option>
+                    </select>
+                </span>
+                <input type="checkbox" class="ws-switch" id="displayForecast" data-setting="displayForecast" checked>
+            </div>
+        </div>
+
+        <div class="ws-row">
+            <div class="ws-row-text">
+                <label for="moonPhase" class="ws-row-label">Moon phase</label>
+                <span class="ws-row-hint">Each day's moon and how much of it is lit.</span>
+            </div>
+            <div class="ws-row-control">
+                <input type="checkbox" class="ws-switch" id="moonPhase" data-setting="moonPhase">
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== Advanced (agenda) ===== -->
+    <details class="ws-section ws-advanced" data-layout="agenda">
+        <summary>Advanced</summary>
+        <div class="ws-row">
+            <div class="ws-row-text">
+                <label for="wireframeMode" class="ws-row-label">Layout outlines</label>
+                <span class="ws-row-hint">Draws a labelled outline around every part of the screen. Only useful when changing the layout.</span>
+            </div>
+            <div class="ws-row-control">
+                <input type="checkbox" class="ws-switch" id="wireframeMode" data-setting="wireframeMode">
+            </div>
+        </div>
+    </details>
+
 </div>
 
-<div class="form-group">
-    <label for="weatherProvider" class="form-label">Weather Provider:</label>
-    <select id="weatherProvider" name="weatherProvider" class="form-input" onchange="updateTitleOptions(this.value)">
-        <option value="OpenMeteo">Open-Meteo</option>
-        <option value="OpenWeatherMap">OpenWeatherMap</option>
-    </select>
-
-    <label for="units" class="form-label">Units:</label>
-    <select id="units" name="units" class="form-input">
-        <option value="imperial">Imperial (°F)</option>
-        <option value="metric">Metric (°C)</option>
-        <option value="standard">Standard (K)</option>
-    </select>
-</div>
-
-<div class="form-group" id="titleOptionWrapper">
-    <label class="form-label">Title:</label>
-
-    <div class="form-group">
-        <input type="radio" id="title-location" name="titleSelection" value="location">
-        <label for="title-location">Location</label>
-
-        <input type="radio" id="title-custom" name="titleSelection" value="custom">
-        <label for="title-custom">Custom</label>
-        <input type="text" id="customTitle" name="customTitle" class="form-input" placeholder="Type something..." />
-    </div>
-</div>
-
-<div class="form-group">
-    <label for="displayMetrics" class="form-label">Display: </label>
-
-    <div class="form-group">
-      <input type="checkbox" id="displayRefreshTime" name="displayRefreshTime" onclick="this.value=this.checked ? 'true' : 'false';">
-      <span>Refresh Time</span>
-    </div>
-
-    <div class="form-group">
-        <input type="checkbox" id="displayMetrics" name="displayMetrics" onclick="this.value=this.checked ? 'true' : 'false';">
-        <span>Metrics</span>
-    </div>
-
-    <div class="form-group">
-        <input type="checkbox" id="displayGraph" name="displayGraph" onclick="this.value=this.checked ? 'true' : 'false';">
-        <span>Weather Graph</span>
-    </div>
-
-    <div class="form-group">
-        <input type="checkbox" id="displayRain" name="displayRain" onclick="this.value=this.checked ? 'true' : 'false';">
-        <span>Rain Amount</span>
-    </div>
-	
-
-    <div class="form-group">
-        <input type="checkbox" id="moonPhase" name="moonPhase" onclick="this.value=this.checked ? 'true' : 'false';">
-        <span>Moon Phase</span>
-    </div>
-	
-	<div class="form-group">
-		<input type="checkbox" id="displayGraphIcons" name="displayGraphIcons" onclick="this.value=this.checked ? 'true' : 'false';">
-		<span>Graph icons every</span>
-		<select id="graphIconStep" name="graphIconStep" class="form-input">
-			<option value="1">1</option>
-			<option value="2" selected>2</option>
-			<option value="4">4</option>
-			<option value="6">6</option>
-			<option value="12">12</option>
-		</select>
-		<span>hours</span>
-	</div>
-
-    <div class="form-group">
-        <input type="checkbox" id="displayForecast" name="displayForecast" onclick="this.value=this.checked ? 'true' : 'false';">
-        <span>Forecast</span>
-        <select id="forecastDays" name="forecastDays" class="form-input">
-            <option value=3>3</option>
-            <option value=5>5</option>
-            <option value=7>7</option>
-        </select>
-        <span>days</span>
-    </div>
-
-    <div class="form-group">
-        <label for="weatherTimeZone" class="form-label">Time Zone:</label>
-        <select id="weatherTimeZone" name="weatherTimeZone" class="form-input">
-            <option value="locationTimeZone">Use Location Time Zone</option>
-            <option value="localTimeZone">Use Local Time Zone</option>
-        </select>
-    </div>
-
-</div>
-
+<!-- Location map modal -->
 <div id="mapModal" class="modal">
     <div class="modal-content">
         <span class="close-button" onclick="closeModal('mapModal')">×</span>
-        <h2 id="modalTitle">Select Location</h2>
+        <h2 id="modalTitle">Choose location</h2>
         <div class="separator"></div>
-        <div id="map" style="width: 100%; height: 200px; margin: 10px 0px;"></div>
-        <button id="closeMap" class="action-button">Save</button>
+        <p class="ws-row-hint">Click the map or drag the pin, then save.</p>
+        <div id="map" style="width: 100%; height: 200px; margin: 10px 0;"></div>
+        <button type="button" id="closeMap" class="action-button">Use this location</button>
     </div>
 </div>
 
 <script>
+    // Switches saved by this plugin's earlier settings page. That page sent nothing for an
+    // unticked box, so for these a missing value means off. Any other switch that was
+    // never saved starts from its default in the markup above.
+    const SWITCHES_OFF_WHEN_MISSING = new Set([
+        'displayRefreshTime', 'displayMetrics', 'displayGraph', 'displayRain',
+        'displayGraphIcons', 'displayForecast', 'moonPhase',
+    ]);
+    // What each layout showed with metric units before wind speed could be chosen.
+    const METRIC_WIND_UNIT = { classic: 'm/s', agenda: 'km/h' };
 
     /** Return true when value is a non-empty string that parses to a finite number. */
     function hasCoord(value) {
@@ -136,17 +742,14 @@
         if (latVal === '' && longVal === '') {
             return true;
         }
-
         if (latVal === '' || longVal === '') {
             showResponseModal('failure', 'Error! Both latitude and longitude are required.');
             return false;
         }
-
         if (!hasCoord(latVal) || !hasCoord(longVal)) {
             showResponseModal('failure', 'Error! Latitude and longitude must be valid numbers.');
             return false;
         }
-
         const lat = Number(latVal);
         const long = Number(longVal);
         if (lat < -90 || lat > 90) {
@@ -157,7 +760,6 @@
             showResponseModal('failure', 'Error! Longitude must be between -180 and 180.');
             return false;
         }
-
         return true;
     }
 
@@ -177,62 +779,111 @@
         return weatherOpenModal(modalId);
     };
 
-    function updateTitleOptions(provider) {
-        const titleLocationRadio = document.getElementById('title-location');
-        const titleLocationLabel = document.querySelector('label[for="title-location"]');
-        const titleCustomRadio = document.getElementById('title-custom');
-        const customTitleInput = document.getElementById('customTitle');
-        const titleTimeZone = document.getElementById('weatherTimeZone');
-        const titleTimeZoneLabel = document.querySelector('label[for="weatherTimeZone"]');
-        const apiKeyLabel = document.querySelector('.api-key-label');
+    // Every on/off setting is a checkbox carrying its setting name in data-setting.
+    function settingSwitches() {
+        return document.querySelectorAll('.ws-settings input[data-setting]');
+    }
 
-        if (provider === 'OpenMeteo') {
-            // Hide or disable "Location" radio option
-            titleLocationRadio.style.display = 'none';
-            titleLocationLabel.style.display = 'none';
-            titleLocationRadio.disabled = true;
-            titleTimeZone.style.display = 'none';
-            titleTimeZoneLabel.style.display = 'none';
-            titleTimeZone.disabled = true;
+    function chosen(name) {
+        const input = document.querySelector(`.ws-settings input[name="${name}"]:checked`);
+        return input ? input.value : null;
+    }
 
-            // Select and enable "Custom"
-            titleCustomRadio.checked = true;
-            titleCustomRadio.disabled = false;
-            customTitleInput.disabled = false;
+    function defaultWindUnit(units, layout) {
+        return units === 'imperial' ? 'mph' : (METRIC_WIND_UNIT[layout] || 'm/s');
+    }
 
-            // Hide API Key required label for Open-Meteo
-            if (apiKeyLabel) apiKeyLabel.style.display = 'none';
+    function updateWeatherProviderUI(provider) {
+        const openMeteo = provider === 'OpenMeteo';
+
+        // Only OpenWeatherMap can name the location.
+        document.querySelectorAll('.ws-settings [data-owm-only]').forEach(el => { el.hidden = openMeteo; });
+        document.getElementById('title-location').disabled = openMeteo;
+        if (openMeteo) document.getElementById('title-custom').checked = true;
+
+        const hint = document.getElementById('providerHint');
+        hint.textContent = '';
+        if (openMeteo) {
+            hint.textContent = 'Free, with no API key. If it fails and an OpenWeatherMap key is saved, OpenWeatherMap is used instead.';
         } else {
-            // Show and enable both options
-            titleLocationRadio.style.display = '';
-            titleLocationLabel.style.display = '';
-            titleLocationRadio.disabled = false;
+            hint.append('Needs an OpenWeatherMap key, saved on the ');
+            const link = document.createElement('a');
+            link.href = '/api-keys';
+            link.textContent = 'API keys page';
+            hint.append(link, '.');
+        }
 
-            titleCustomRadio.disabled = false;
-            customTitleInput.disabled = false;
+        const apiKeyLabel = document.querySelector('.api-key-label');
+        if (apiKeyLabel) apiKeyLabel.style.display = openMeteo ? 'none' : '';
+    }
 
-            titleTimeZone.style.display = '';
-            titleTimeZoneLabel.style.display = '';
-            titleTimeZone.disabled = false;
+    // Shows only the settings that apply to the chosen layout and currently have an effect.
+    function updateDependentOptions() {
+        const layout = chosen('layout') || 'classic';
+        document.querySelectorAll('.ws-settings [data-layout]').forEach(el => {
+            el.hidden = el.dataset.layout !== layout;
+        });
 
-            // Show API Key required label for OpenWeatherMap
-            if (apiKeyLabel) apiKeyLabel.style.display = '';
+        const isOn = id => document.getElementById(id).checked;
+        document.getElementById('hourlyOptions').hidden = !isOn('displayGraph');
+        document.getElementById('graphIconStepWrap').classList.toggle('ws-dim', !isOn('displayGraphIcons'));
+        document.getElementById('forecastDaysWrap').classList.toggle('ws-dim', !isOn('displayForecast'));
+        document.getElementById('agendaChartWindRow').hidden = chosen('agendaForecastStyle') !== 'chart';
+    }
+
+    // Changing between imperial and metric moves the wind speed to that system's unit.
+    function updateWindUnitForUnits() {
+        const units = document.getElementById('units').value;
+        const windUnit = document.getElementById('windUnit');
+        if ((units === 'imperial') !== (windUnit.value === 'mph')) {
+            windUnit.value = defaultWindUnit(units, chosen('layout'));
         }
     }
 
+    function addCalendarInput(url, color, focus) {
+        const calendarList = document.getElementById('calendarList');
+
+        const wrapper = document.createElement('div');
+        wrapper.classList.add('calendar-entry', 'ws-calendar');
+
+        const colorInput = document.createElement('input');
+        colorInput.type = 'color';
+        colorInput.name = 'calendarColors[]';
+        colorInput.classList.add('color-picker');
+        colorInput.value = color || '#007BFF';
+        colorInput.title = 'Event colour';
+        colorInput.setAttribute('aria-label', 'Event colour');
+
+        const urlInput = document.createElement('input');
+        urlInput.type = 'text';
+        urlInput.name = 'calendarURLs[]';
+        urlInput.placeholder = 'https://…/basic.ics';
+        urlInput.classList.add('form-input');
+        urlInput.value = url || '';
+        urlInput.setAttribute('aria-label', 'Calendar iCal link');
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.innerText = '✕';
+        removeBtn.classList.add('remove-btn');
+        removeBtn.title = 'Remove this calendar';
+        removeBtn.setAttribute('aria-label', 'Remove this calendar');
+        removeBtn.onclick = () => wrapper.remove();
+
+        wrapper.appendChild(colorInput);
+        wrapper.appendChild(urlInput);
+        wrapper.appendChild(removeBtn);
+        calendarList.appendChild(wrapper);
+        if (focus) urlInput.focus();
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
-
-        const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-        const $latitude = document.querySelector('#latitude');
+        const $latitude  = document.querySelector('#latitude');
         const $longitude = document.querySelector('#longitude');
-        const $openMap = document.querySelector('#openMap');
-        const $mapModal = document.querySelector('#mapModal');
-        const $closeMap = document.querySelector('#closeMap');
+        const $openMap   = document.querySelector('#openMap');
+        const $closeMap  = document.querySelector('#closeMap');
 
-        let latitude = parseCoord($latitude.value, 0);
-        let longitude = parseCoord($longitude.value, 0);
-        let zoom = hasCoord($latitude.value) && hasCoord($longitude.value) ? 4.5 : 2.5;
-        let selectedTitle = 'location';
+        let selectedTitle   = 'location';
         let weatherProvider = 'OpenMeteo';
 
         let map, marker;
@@ -241,40 +892,24 @@
 
         $openMap.addEventListener('click', () => {
             if (!validateCoordInputs()) return;
-            // Re-read the current latitude/longitude inputs in case the user
-            // edited them manually after the page loaded.
-            const latInput = document.getElementById('latitude').value;
-            const longInput = document.getElementById('longitude').value;
-
-            hadValidCoords = hasCoord(latInput) && hasCoord(longInput);
+            // Start from what is in the boxes now, which may have been typed.
+            hadValidCoords = hasCoord($latitude.value) && hasCoord($longitude.value);
             markerMoved = false;
-
-            if (hadValidCoords) {
-                const parsedLat = Number(latInput);
-                const parsedLong = Number(longInput);
-                if (Number.isFinite(parsedLat) && Number.isFinite(parsedLong)) {
-                    latitude = parsedLat;
-                    longitude = parsedLong;
-                }
-            }
-
-            // Recompute zoom based on whether coordinates are present
-            zoom = hadValidCoords ? 4.5 : 2.5;
+            const latitude  = parseCoord($latitude.value, 0);
+            const longitude = parseCoord($longitude.value, 0);
+            const zoom      = hadValidCoords ? 4.5 : 2.5;
 
             openModal('mapModal');
             setTimeout(() => {
                 if (!map) {
                     map = L.map('map').setView([latitude, longitude], zoom);
-                    L.tileLayer(OSM_TILE_URL).addTo(map);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
                     marker = L.marker([latitude, longitude], { draggable: true }).addTo(map);
-
                     map.on('click', event => {
                         marker.setLatLng(event.latlng);
                         markerMoved = true;
                     });
-                    marker.on('dragend', () => {
-                        markerMoved = true;
-                    });
+                    marker.on('dragend', () => { markerMoved = true; });
                 } else {
                     map.invalidateSize();
                     map.setView([latitude, longitude], zoom);
@@ -284,78 +919,97 @@
         });
 
         $closeMap.addEventListener('click', () => {
-            // Only persist coordinates if the user moved the marker
-            // or the inputs already had valid values before opening.
-            if (markerMoved || hadValidCoords) {
+            // Keep the boxes as they were unless a place was picked or one was already set.
+            if (marker && (markerMoved || hadValidCoords)) {
                 const position = marker.getLatLng().wrap();
-                $latitude.value = position.lat;
+                $latitude.value  = position.lat;
                 $longitude.value = position.lng;
             }
             closeModal('mapModal');
         });
 
         if (loadPluginSettings) {
-            document.getElementById('latitude').value = pluginSettings.latitude ?? '';
-            document.getElementById('longitude').value = pluginSettings.longitude ?? '';
+            const layout = pluginSettings.layout === 'agenda' ? 'agenda' : 'classic';
+            document.querySelector(`.ws-settings input[name="layout"][value="${layout}"]`).checked = true;
 
-            document.getElementById('units').value = pluginSettings.units;
+            // Weather
+            $latitude.value  = pluginSettings.latitude  ?? '';
+            $longitude.value = pluginSettings.longitude ?? '';
+            const units = pluginSettings.units || 'imperial';
+            document.getElementById('units').value = units;
+            document.getElementById('windUnit').value = ['m/s', 'km/h', 'mph'].includes(pluginSettings.windUnit)
+                ? pluginSettings.windUnit : defaultWindUnit(units, layout);
+            document.getElementById('graphIconStep').value = pluginSettings.graphIconStep || '2';
+            document.getElementById('forecastDays').value = pluginSettings.forecastDays || '7';
+            document.getElementById('weatherTimeZone').value = pluginSettings.weatherTimeZone || 'locationTimeZone';
 
-            document.getElementById('displayRefreshTime').checked = pluginSettings.displayRefreshTime;
-            document.getElementById('displayRefreshTime').value = pluginSettings.displayRefreshTime;
+            settingSwitches().forEach(box => {
+                const saved = pluginSettings[box.dataset.setting];
+                if (saved === undefined) {
+                    box.checked = SWITCHES_OFF_WHEN_MISSING.has(box.dataset.setting) ? false : box.defaultChecked;
+                } else {
+                    box.checked = saved === 'true';
+                }
+            });
 
-            document.getElementById('displayMetrics').checked = pluginSettings.displayMetrics;
-            document.getElementById('displayMetrics').value = pluginSettings.displayMetrics;
+            const forecastStyle = pluginSettings.agendaForecastStyle === 'summary' ? 'summary' : 'chart';
+            document.querySelector(`.ws-settings input[name="agendaForecastStyle"][value="${forecastStyle}"]`).checked = true;
 
-            document.getElementById('displayGraph').checked = pluginSettings.displayGraph;
-            document.getElementById('displayGraph').value = pluginSettings.displayGraph;
-
-			document.getElementById('displayRain').checked = pluginSettings.displayRain;
-            document.getElementById('displayRain').value = pluginSettings.displayRain;
-			
-			document.getElementById('displayGraphIcons').checked = pluginSettings.displayGraphIcons;
-            document.getElementById('displayGraphIcons').value = pluginSettings.displayGraphIcons;
-			
-            document.getElementById('displayForecast').checked = pluginSettings.displayForecast;
-            document.getElementById('displayForecast').value = pluginSettings.displayForecast;
-
-            document.getElementById('forecastDays').value = pluginSettings.forecastDays;
-
-            document.getElementById('moonPhase').checked = pluginSettings.moonPhase;
-            document.getElementById('moonPhase').value = pluginSettings.moonPhase;
-
-            document.getElementById('weatherTimeZone').value = pluginSettings.weatherTimeZone;
-            
-            selectedTitle = pluginSettings.titleSelection || 'location';
+            selectedTitle   = pluginSettings.titleSelection || 'location';
             weatherProvider = pluginSettings.weatherProvider || 'OpenMeteo';
-
             document.getElementById('customTitle').value = pluginSettings.customTitle || '';
+
+            // Calendar
+            const calUrls   = pluginSettings["calendarURLs[]"];
+            const calColors = pluginSettings["calendarColors[]"];
+            if (calUrls) {
+                const urls   = Array.isArray(calUrls)   ? calUrls   : [calUrls];
+                const colors = Array.isArray(calColors) ? calColors : [calColors];
+                urls.forEach((url, i) => addCalendarInput(url, colors[i] || '#007BFF'));
+            }
+
         } else {
-            // set default values
-            document.getElementById('units').value = "imperial";
-            document.getElementById('displayRefreshTime').checked = true;
-            document.getElementById('displayRefreshTime').value = "true";
-            document.getElementById('displayMetrics').checked = true;
-            document.getElementById('displayMetrics').value = "true";
-            document.getElementById('displayGraph').checked = true;
-            document.getElementById('displayGraph').value = "true";
-			document.getElementById('displayRain').checked = false;
-            document.getElementById('displayRain').value = "false";
-			document.getElementById('displayGraphIcons').checked = false;
-			document.getElementById('displayGraphIcons').value = "false";
-            document.getElementById('displayForecast').checked = true;
-            document.getElementById('displayForecast').value = "true";
-            document.getElementById('forecastDays').value = 7;
-            document.getElementById('moonPhase').checked = false;
-			document.getElementById('moonPhase').value = "false";
-            document.getElementById('weatherTimeZone').value = "locationTimeZone";
+            // A new instance starts from the switches' and choices' defaults in the markup above.
+            document.getElementById('units').value = 'imperial';
+            document.getElementById('windUnit').value = defaultWindUnit('imperial', 'classic');
+            document.getElementById('weatherTimeZone').value = 'locationTimeZone';
+            addCalendarInput('', '#007BFF');
         }
 
-        latitude = parseCoord(document.getElementById('latitude').value, 0);
-        longitude = parseCoord(document.getElementById('longitude').value, 0);
-        zoom = hasCoord(document.getElementById('latitude').value) && hasCoord(document.getElementById('longitude').value) ? 4.5 : 2.5;
-
         document.getElementById('weatherProvider').value = weatherProvider;
-        document.querySelector(`input[name="titleSelection"][value="${selectedTitle}"]`).checked = true;
-        updateTitleOptions(weatherProvider)
+        const radioEl = document.querySelector(`input[name="titleSelection"][value="${selectedTitle}"]`);
+        if (radioEl) radioEl.checked = true;
+        updateWeatherProviderUI(weatherProvider);
+        updateDependentOptions();
+
+        const settings = document.querySelector('.ws-settings');
+        settings.addEventListener('change', event => {
+            if (event.target.id === 'units') updateWindUnitForUnits();
+            updateDependentOptions();
+        });
+
+        const form = settings.closest('form');
+        if (form) {
+            // Runs whenever the page gathers the form to save or preview it.
+            form.addEventListener('formdata', event => {
+                const data = event.formData;
+                // Switches are always sent, as "true" or "false".
+                settingSwitches().forEach(box => data.set(box.dataset.setting, box.checked ? 'true' : 'false'));
+                // Calendar rows left empty are not sent.
+                data.delete('calendarURLs[]');
+                data.delete('calendarColors[]');
+                document.querySelectorAll('#calendarList .calendar-entry').forEach(entry => {
+                    const url = entry.querySelector('input[name="calendarURLs[]"]').value.trim();
+                    if (!url) return;
+                    data.append('calendarURLs[]', url);
+                    data.append('calendarColors[]', entry.querySelector('input[name="calendarColors[]"]').value);
+                });
+            });
+            // The page resets the form after "Add to Playlist".
+            form.addEventListener('reset', () => setTimeout(() => {
+                updateWeatherProviderUI(document.getElementById('weatherProvider').value);
+                updateDependentOptions();
+            }));
+        }
     });
 </script>

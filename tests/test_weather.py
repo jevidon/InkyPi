@@ -9,9 +9,9 @@ import requests
 # so src/ must be importable the same way it is at runtime.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src"))
 
-from plugins.weather_agenda.weather_agenda import WeatherAgenda, _request_open_meteo  # noqa: E402
+from plugins.weather.weather import Weather, _request_open_meteo  # noqa: E402
 
-MODULE = "plugins.weather_agenda.weather_agenda"
+MODULE = "plugins.weather.weather"
 
 OPEN_METEO_DATA = {
     "current": {
@@ -93,7 +93,7 @@ def _settings(**overrides):
     settings = {
         "latitude": "40.7", "longitude": "-74.0", "units": "imperial",
         "weatherProvider": "OpenMeteo", "customTitle": "Home",
-        "titleSelection": "location", "displayUpdatedAt": "true",
+        "titleSelection": "location", "displayRefreshTime": "true",
     }
     settings.update(overrides)
     return settings
@@ -103,11 +103,12 @@ def _run(settings, device_config, apis):
     """Run generate_image with the network and the browser screenshot mocked.
 
     Returns the template params handed to the renderer."""
-    plugin = WeatherAgenda({"id": "weather_agenda"})
+    plugin = Weather({"id": "weather"})
     captured = {}
 
     def fake_render(dimensions, html_file, css_file=None, template_params={}):
         captured.update(template_params)
+        captured["_template_files"] = (html_file, css_file)
         return object()
 
     with patch(f"{MODULE}.requests.get", side_effect=apis), \
@@ -141,17 +142,24 @@ class TestOpenMeteoFallback:
         assert params["title"] == "Home"
         assert not [u for u in apis.called("openweathermap.org") if "/geo/" in u]
         assert all("units=imperial" in u for u in apis.called("onecall"))
-        # Device timezone (New York), not the OWM-reported one (Tokyo):
+        # The location's time zone, as Open-Meteo would have used: OWM names it Tokyo.
         # 1795644000 is 2026-11-25 17:00 in New York but 2026-11-26 in Tokyo.
-        assert params["current_date"] == "Wednesday, November 25"
+        assert params["current_date"] == "Thursday, November 26"
         assert params["data_points"][0]["label"] == "Sunrise"
         assert "Falling back to OpenWeatherMap" in caplog.text
         assert "TLS handshake stalled" in caplog.text
 
+    def test_fallback_keeps_the_device_time_zone_when_chosen(self):
+        apis = FakeApis(open_meteo_error=requests.exceptions.ReadTimeout("TLS handshake stalled"))
+        params = _run(_settings(weatherTimeZone="localTimeZone"), _device_config(api_key="key"), apis)
+
+        assert params["backup_source"] == "OpenWeatherMap"
+        assert params["current_date"] == "Wednesday, November 25"
+
     def test_open_meteo_parse_failure_falls_back_to_owm(self):
         apis = FakeApis()
         plugin_settings = _settings()
-        with patch.object(WeatherAgenda, "_parse_open_meteo_data", side_effect=KeyError("daily")):
+        with patch.object(Weather, "_parse_open_meteo_data", side_effect=KeyError("daily")):
             params = _run(plugin_settings, _device_config(api_key="key"), apis)
         assert params["backup_source"] == "OpenWeatherMap"
 
@@ -186,8 +194,8 @@ class TestOpenMeteoFallback:
     def test_open_meteo_requests_use_extended_timeout(self):
         apis = FakeApis()
         with patch(f"{MODULE}.requests.get", side_effect=apis) as get:
-            plugin = WeatherAgenda({"id": "weather_agenda"})
-            plugin._get_open_meteo_data(40.7, -74.0, "imperial", 8, "America/New_York")
+            plugin = Weather({"id": "weather"})
+            plugin._get_open_meteo_data(40.7, -74.0, "imperial", "mph", 8, "America/New_York")
             plugin._get_open_meteo_air_quality(40.7, -74.0, "America/New_York")
         for call in get.call_args_list:
             assert call.kwargs["timeout"] == (15, 30)
@@ -242,10 +250,10 @@ class TestOpenMeteoRetries:
 class TestBackupSourceTemplate:
 
     def _render_header(self, backup_source, updated_at_text="(updated at 4:33 AM)"):
-        params = _run(_settings(), _device_config(api_key="key"), FakeApis())
+        params = _run(_settings(layout="agenda"), _device_config(api_key="key"), FakeApis())
         params.update(backup_source=backup_source, updated_at_text=updated_at_text)
-        plugin = WeatherAgenda({"id": "weather_agenda"})
-        html = plugin.env.get_template("weather_agenda.html").render(params)
+        plugin = Weather({"id": "weather"})
+        html = plugin.env.get_template("agenda.html").render(params)
         start = html.index('<div class="wa-header">')
         return html[start:html.index('<div class="wa-sun-metrics">', start)]
 
@@ -266,3 +274,151 @@ class TestBackupSourceTemplate:
         header = self._render_header(backup_source="OpenWeatherMap", updated_at_text="")
         assert "wa-updated-at-text" not in header
         assert '<span class="wa-backup-tag">Backup source</span>' in header
+
+
+class TestLayouts:
+
+    def test_instances_saved_before_layouts_are_classic(self):
+        params = _run(_settings(), _device_config(), FakeApis())
+
+        assert params["layout"] == "classic"
+        assert params["_template_files"] == ("weather.html", "weather.css")
+        assert "agenda_events" not in params
+
+    def test_agenda_layout_uses_its_own_template(self):
+        params = _run(_settings(layout="agenda"), _device_config(), FakeApis())
+
+        assert params["layout"] == "agenda"
+        assert params["_template_files"] == ("agenda.html", "agenda.css")
+        assert params["agenda_events"] == []
+
+    def test_unknown_layout_falls_back_to_classic(self):
+        params = _run(_settings(layout="poster"), _device_config(), FakeApis())
+
+        assert params["_template_files"] == ("weather.html", "weather.css")
+
+    def test_classic_metrics_are_all_present_in_order(self):
+        params = _run(_settings(), _device_config(), FakeApis())
+
+        assert [dp["label"] for dp in params["data_points"]] == [
+            "Sunrise", "Sunset", "Wind", "Humidity", "Pressure", "UV Index", "Visibility", "Air Quality",
+        ]
+        assert params["feels_like"] == "10"
+
+    def test_agenda_shows_sunrise_sunset_and_current_uv(self):
+        params = _run(_settings(layout="agenda"), _device_config(), FakeApis())
+
+        assert [dp["label"] for dp in params["sun_metrics"]] == ["Sunrise", "Sunset", "Current UV"]
+        assert params["sun_metrics"][2]["measurement"] == "1.2"
+
+    def test_owm_metrics_missing_from_the_response_show_as_unavailable(self):
+        params = _run(_settings(weatherProvider="OpenWeatherMap"), _device_config(api_key="key"), FakeApis())
+        metrics = {dp["label"]: dp for dp in params["data_points"]}
+
+        assert metrics["Visibility"]["measurement"] == "N/A"
+        assert metrics["Air Quality"]["measurement"] == "N/A"
+
+    def test_refresh_time_setting_drives_the_agenda_updated_text(self):
+        on = _run(_settings(layout="agenda", displayRefreshTime="true"), _device_config(), FakeApis())
+        off = _run(_settings(layout="agenda", displayRefreshTime="false"), _device_config(), FakeApis())
+
+        assert on["updated_at_text"].startswith("(updated at ")
+        assert off["updated_at_text"] == ""
+
+
+def _open_meteo_wind_param(apis):
+    url = apis.called("/v1/forecast")[0]
+    return url.split("wind_speed_unit=")[1].split("&")[0]
+
+
+class TestWindUnit:
+
+    def test_classic_metric_without_a_choice_stays_in_metres_per_second(self):
+        apis = FakeApis()
+        params = _run(_settings(units="metric"), _device_config(), apis)
+
+        assert _open_meteo_wind_param(apis) == "ms"
+        assert params["wind_unit"] == "m/s"
+
+    def test_agenda_metric_without_a_choice_stays_in_kilometres_per_hour(self):
+        apis = FakeApis()
+        params = _run(_settings(units="metric", layout="agenda"), _device_config(), apis)
+
+        assert _open_meteo_wind_param(apis) == "kmh"
+        assert params["wind_unit"] == "km/h"
+
+    def test_imperial_without_a_choice_is_miles_per_hour(self):
+        for layout in ("classic", "agenda"):
+            apis = FakeApis()
+            _run(_settings(units="imperial", layout=layout), _device_config(), apis)
+            assert _open_meteo_wind_param(apis) == "mph"
+
+    def test_chosen_unit_is_used_in_either_layout(self):
+        for layout in ("classic", "agenda"):
+            for wind_unit, param in (("m/s", "ms"), ("km/h", "kmh"), ("mph", "mph")):
+                apis = FakeApis()
+                params = _run(_settings(units="metric", layout=layout, windUnit=wind_unit), _device_config(), apis)
+                assert _open_meteo_wind_param(apis) == param
+                assert params["wind_unit"] == wind_unit
+                wind = next(dp for dp in params["data_points"] if dp["label"] == "Wind")
+                assert wind["unit"] == wind_unit
+
+    def test_owm_wind_is_converted_to_the_chosen_unit(self):
+        apis = FakeApis()
+        params = _run(
+            _settings(weatherProvider="OpenWeatherMap", units="imperial", windUnit="km/h"),
+            _device_config(api_key="key"), apis,
+        )
+        # OWM_DATA reports 3 mph now and 4 mph for the day.
+        wind = next(dp for dp in params["data_points"] if dp["label"] == "Wind")
+        assert wind["measurement"] == 4.8
+        assert wind["unit"] == "km/h"
+        assert params["forecast"][0]["wind_speed"] == 6
+
+    def test_owm_wind_is_shown_as_reported_when_no_conversion_is_needed(self):
+        params = _run(
+            _settings(weatherProvider="OpenWeatherMap", units="metric"),
+            _device_config(api_key="key"), FakeApis(),
+        )
+        wind = next(dp for dp in params["data_points"] if dp["label"] == "Wind")
+        assert wind["measurement"] == 3
+        assert wind["unit"] == "m/s"
+
+
+class TestTimeZone:
+
+    def test_open_meteo_follows_the_location_by_default(self):
+        apis = FakeApis()
+        _run(_settings(), _device_config(), apis)
+
+        assert all("timezone=auto" in url for url in apis.called("open-meteo.com"))
+
+    def test_open_meteo_follows_the_device_when_chosen(self):
+        apis = FakeApis()
+        _run(_settings(weatherTimeZone="localTimeZone"), _device_config(), apis)
+
+        assert all("timezone=America%2FNew_York" in url for url in apis.called("open-meteo.com"))
+
+    def test_open_meteo_times_are_read_in_the_zone_it_reports(self):
+        plugin = Weather({"id": "weather"})
+        tz = plugin._open_meteo_timezone({"timezone": "Asia/Tokyo"}, None)
+        assert tz.zone == "Asia/Tokyo"
+        assert plugin._open_meteo_timezone({}, "fallback") == "fallback"
+        assert plugin._open_meteo_timezone({"timezone": "Not/AZone"}, "fallback") == "fallback"
+
+
+class TestCoordinates:
+
+    @pytest.mark.parametrize("lat, long", [("", "-74.0"), ("40.7", " "), (None, None)])
+    def test_missing_coordinates_are_rejected(self, lat, long):
+        with pytest.raises(RuntimeError, match="Latitude and Longitude are required."):
+            _run(_settings(latitude=lat or "", longitude=long or ""), _device_config(), FakeApis())
+
+    def test_non_numeric_coordinates_are_rejected(self):
+        with pytest.raises(RuntimeError, match="must be valid numbers"):
+            _run(_settings(latitude="north"), _device_config(), FakeApis())
+
+    def test_zero_is_a_valid_coordinate(self):
+        params = _run(_settings(latitude="0", longitude="0"), _device_config(), FakeApis())
+
+        assert params["current_temperature"] == "10"

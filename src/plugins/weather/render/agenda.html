@@ -10,7 +10,7 @@
     /* Shared label base */
     .wa-outer::before, .wa-layout::before, .wa-weather-col::before,
     .wa-header::before, .wa-current-forecast::before, .wa-current-left::before,
-    .wa-metrics-row::before, .wa-temp-icon-block::before, .wa-temp-icon-row::before,
+    .wa-temp-icon-block::before, .wa-temp-icon-row::before,
     .wa-temp::before, .wa-agenda-col::before, .wa-agenda-day::before,
     .wa-agenda-day-body::before, .wa-agenda-day-events::before,
     .wa-agenda-day-wx::before, .wa-agenda-event::before,
@@ -47,8 +47,6 @@
     .wa-current-left     { background: rgba(255,0,128,0.07); outline: 2px dashed hotpink; position: relative; }
     .wa-current-left::before { content: "wa-current-left"; background: hotpink;     color: #000; top: 12px; left: 0; }
 
-    .wa-metrics-row      { background: rgba(0,200,100,0.10); outline: 2px dashed mediumseagreen; position: relative; }
-    .wa-metrics-row::before { content: "wa-metrics-row";   background: mediumseagreen; color: #fff; top: 0; right: 0; }
 
     .wa-temp-icon-block  { outline: 1px dashed plum;       position: relative; }
     .wa-temp-icon-block::before { content: "wa-temp-icon-block"; background: plum;  color: #000; top: 0; left: 0; }
@@ -150,20 +148,6 @@
                 <span class="wa-temp-unit">{{ temperature_unit }}</span>
               </span>
             </div>
-
-            {% if metrics_below %}
-            <div class="wa-metrics-row">
-              {% for dp in metrics_below %}
-              <div class="wa-data-point" {% if plugin_settings.wireframeMode == "true" %}data-dbg="{{ dp.icon.split('/') | last }}"{% endif %}>
-                <img class="wa-dp-icon" src="{{ dp.icon }}" alt="{{ dp.label }}">
-                <div class="wa-dp-text">
-                  <div class="wa-dp-label">{{ dp.label }}</div>
-                  <div class="wa-dp-value">{{ dp.measurement }}{% if dp.unit %}<span class="wa-dp-unit"> {{ dp.unit }}</span>{% endif %}{% if dp.label == "Wind" %} {{ dp.arrow }}{% endif %}</div>
-                </div>
-              </div>
-              {% endfor %}
-            </div>
-            {% endif %}
           </div>
 
         </div><!-- end wa-current-left -->
@@ -212,7 +196,21 @@
               </div>
 
               {% if day_group.forecast %}
-              <div class="wa-agenda-day-wx" {% if plugin_settings.wireframeMode == "true" %}data-dbg="{{ day_group.forecast.icon.split('/') | last }}"{% endif %}>
+              <div class="wa-agenda-day-wx{% if day_group.chart %} wa-agenda-day-wx--chart{% endif %}" {% if plugin_settings.wireframeMode == "true" %}data-dbg="{{ day_group.forecast.icon.split('/') | last }}"{% endif %}>
+                {% if day_group.chart %}
+                <!-- Day stats on one line, ruled to match the day header, over that day's chart -->
+                <div class="wa-wx-summary">
+                  <img class="wa-wx-summary-icon" src="{{ day_group.forecast.icon }}" alt="">
+                  <span class="wa-wx-summary-item"><img src="{{ agenda_wx_icons.precip }}" alt="Precip">{{ day_group.forecast.rain_pct }}%</span>
+                  <span class="wa-wx-summary-item"><img src="{{ agenda_wx_icons.wind }}" alt="Wind">{{ day_group.forecast.wind_speed }}</span>
+                  <span class="wa-wx-summary-item"><img src="{{ agenda_wx_icons.uvi }}" alt="UV">{{ day_group.forecast.uvi }}</span>
+                </div>
+                <div class="wa-wx-chart">
+                  <div class="wa-wx-chart-inner">
+                    <canvas class="wa-day-chart" data-chart='{{ day_group.chart | tojson }}'{% if day_group.forecast.rain_amount %} data-rain-label="{{ day_group.forecast.rain_amount }} {{ day_group.forecast.rain_unit }}"{% endif %}></canvas>
+                  </div>
+                </div>
+                {% else %}
                 <div class="wa-wx-metrics">
                   <div class="wa-wx-row" {% if plugin_settings.wireframeMode == "true" %}data-dbg="{{ agenda_wx_icons.precip.split('/') | last }}"{% endif %}>
                     <img class="wa-wx-metric-icon" src="{{ agenda_wx_icons.precip }}" alt="Precip">
@@ -228,6 +226,7 @@
                   </div>
                 </div>
                 <img class="wa-wx-icon" src="{{ day_group.forecast.icon }}" alt="">
+                {% endif %}
               </div>
               {% endif %}
 
@@ -245,16 +244,6 @@
   <!-- ===== CHART: Full-width, under both columns ===== -->
   {% if plugin_settings.displayGraph == "true" %}
   <div class="wa-chart-container">
-    {% if plugin_settings.displayGraphSunEvents == "true" and sun_events %}
-    <div class="wa-sun-events">
-      {% for evt in sun_events %}
-      <div class="wa-sun-event wa-sun-event-{{ evt.type }}" data-hour-offset="{{ evt.hour_offset }}">
-        <img src="{{ evt.icon }}" alt="{{ evt.type }}">
-        <span class="wa-sun-event-time">{{ evt.time }}</span>
-      </div>
-      {% endfor %}
-    </div>
-    {% endif %}
     <canvas id="hourlyTemperatureChart"></canvas>
   </div>
   {% endif %}
@@ -287,7 +276,163 @@ document.addEventListener("DOMContentLoaded", function () {
       });
     }
   }
-  requestAnimationFrame(trimOverflowingAgendaDays);
+  // Draws a colour at reduced strength, e.g. the text colour for lines that should recede.
+  function withAlpha(color, alpha) {
+    const probe = document.createElement('canvas').getContext('2d');
+    probe.fillStyle = '#000000';
+    probe.fillStyle = color;
+    const hex = probe.fillStyle;
+    if (!/^#[0-9a-f]{6}$/i.test(hex)) return color;
+    const n = parseInt(hex.slice(1), 16);
+    return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+  }
+
+  // --- Agenda day charts: each card's day, 6 AM to midnight, drawn like the hourly chart below ---
+  function drawDayCharts() {
+    if (typeof Chart === 'undefined') return;
+    const isNumber  = v => typeof v === 'number';
+    const imperial  = document.getElementById('units-container').dataset.units === "imperial";
+    const drawWind  = {{ 'true' if agenda_chart_wind else 'false' }};
+    const ink       = "{{ plugin_settings.textColor }}";
+    const windColor = withAlpha(ink, 0.4);
+    const labelSize = Math.max(11, Math.round(window.innerHeight * 0.0125));
+
+    // Fill that runs from the top of the plot to the bottom, whatever size the card ends up.
+    const verticalGradient = stops => context => {
+      const area = context.chart.chartArea;
+      if (!area) return 'rgba(0, 0, 0, 0)';
+      const gradient = context.chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+      stops.forEach(([at, color]) => gradient.addColorStop(at, color));
+      return gradient;
+    };
+    const tempFill = verticalGradient([[0, 'rgba(252, 204, 5, 0.95)'], [1, 'rgba(252, 204, 5, 0.01)']]);
+    // Stronger than the hourly chart's rain fill: these bars sit on the temperature fill, and a
+    // faint blue over yellow turns grey.
+    const rainFill = verticalGradient([[0, 'rgba(26, 111, 176, 0.95)'], [1, 'rgba(120, 175, 220, 0.85)']]);
+    const uvFill   = verticalGradient([
+      [0,      'rgba(168,  85, 247, 0.8)'],  // 11 — Extreme (purple)
+      [3 / 11, 'rgba(239,  68,  68, 0.8)'],  //  8 — Very High (red)
+      [5 / 11, 'rgba(249, 115,  22, 0.8)'],  //  6 — High (orange)
+      [8 / 11, 'rgba(234, 179,   8, 0.8)'],  //  3 — Moderate (yellow)
+      [9 / 11, 'rgba( 34, 197,  94, 0.8)'],  //  2 — Low (green)
+      [1,      'rgba( 34, 197,  94, 0)']     //  0 — transparent
+    ]);
+
+    document.querySelectorAll('canvas.wa-day-chart').forEach(dayCanvas => {
+      if (!dayCanvas.offsetParent) return;  // its card was trimmed for space
+      let day;
+      try { day = JSON.parse(dayCanvas.dataset.chart); } catch (e) { return; }
+      const temps = day.temperature || [];
+      const count = temps.length;
+      if (count < 2) return;
+
+      const lowTemp  = Math.min(...temps);
+      const highTemp = Math.max(...temps);
+
+      // Edge bars are centred on the plot's left and right extents and would be cut in half.
+      const rain = (day.rain || []).slice();
+      rain[0] = null;
+      rain[count - 1] = null;
+      const rainPeak = Math.max(0, ...rain.filter(isNumber));
+      const rainMax  = Math.max(rainPeak, imperial ? 0.1 : 2.5);
+
+      const wind    = day.wind || [];
+      const hasWind = drawWind && wind.some(isNumber);
+      const hasGust = hasWind && (day.gust || []).some(isNumber);
+      // Where an hour has no gust reading the gust line meets the wind line; gusts never dip below wind.
+      const gusts   = (day.gust || []).map((g, i) => isNumber(g) ? (isNumber(wind[i]) ? Math.max(g, wind[i]) : g) : wind[i]);
+      const windPeak = hasWind ? Math.max(...wind.filter(isNumber), ...(hasGust ? gusts.filter(isNumber) : [])) : 0;
+      const windMax  = Math.max(20, Math.ceil(windPeak / 20) * 20);
+      const windLines = !hasWind ? [] : [
+        {
+          type: 'line', data: wind, yAxisID: 'yw', order: -2,
+          borderColor: windColor, borderWidth: 2.5, pointRadius: 0, fill: false, tension: 0.4,
+        },
+        ...(!hasGust ? [] : [{
+          type: 'line', data: gusts, yAxisID: 'yw', order: -2,
+          borderColor: windColor, borderWidth: 2, borderDash: [6, 5], pointRadius: 0, fill: false, tension: 0.4,
+        }]),
+      ];
+
+      // The day's rain total, written once above the tallest bar.
+      const rainLabel = dayCanvas.dataset.rainLabel;
+      const rainTotal = {
+        id: 'dayRainTotal',
+        afterDatasetsDraw(chart) {
+          if (!rainLabel || rainPeak <= 0) return;
+          const bar = chart.getDatasetMeta(1).data[rain.indexOf(rainPeak)];
+          if (!bar) return;
+          const { ctx, chartArea } = chart;
+          ctx.save();
+          ctx.font = `600 ${labelSize}px Jost`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+          ctx.fillStyle = ink;
+          const half = ctx.measureText(rainLabel).width / 2;
+          const x = Math.min(Math.max(bar.x, chartArea.left + half), chartArea.right - half);
+          const y = Math.max(bar.y - 3, chartArea.top + labelSize + 1);
+          ctx.fillText(rainLabel, x, y);
+          ctx.restore();
+        }
+      };
+
+      new Chart(dayCanvas.getContext('2d'), {
+        type: 'line',
+        data: {
+          labels: temps.map((_, i) => i),
+          datasets: [
+            {
+              type: 'line', data: temps, yAxisID: 'y',
+              borderColor: 'rgba(241, 122, 36, 0.9)', borderWidth: 2, pointRadius: 0,
+              backgroundColor: tempFill, fill: 'start', clip: false, tension: 0.5,
+            },
+            {
+              // Above the temperature fill, which at this size would wash the bars out.
+              type: 'bar', data: rain, yAxisID: 'y1', order: -1,
+              borderColor: 'rgba(26, 111, 176, 1)',
+              borderWidth: { top: 2, right: 0, bottom: 0, left: 0 },
+              backgroundColor: rainFill, barPercentage: 1.0, categoryPercentage: 1.0,
+            },
+            {
+              type: 'line', data: day.uv || [], yAxisID: 'y2',
+              borderWidth: 0, pointRadius: 0, backgroundColor: uvFill, fill: true, tension: 0.4,
+            },
+            ...windLines
+          ]
+        },
+        options: {
+          animation: false,
+          responsive: true,
+          maintainAspectRatio: false,
+          events: [],
+          layout: { padding: { top: 2 } },
+          scales: {
+            x:  { display: false, offset: false },
+            y:  { display: false, min: lowTemp, max: highTemp > lowTemp ? highTemp : lowTemp + 1 },
+            y1: { display: false, min: 0, max: rainMax },
+            y2: { display: false, min: 0, max: 11 },
+            yw: { display: false, min: 0, max: windMax },
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: { enabled: false },
+            // Annotations registered for the hourly chart below do not belong on these.
+            annotationRain: false,
+            chartIcons: false,
+            windLabels: false,
+          },
+          elements: { line: { borderJoinStyle: 'round' } }
+        },
+        plugins: [rainTotal]
+      });
+    });
+  }
+
+  // Trim first: cards that remain are stretched, and each chart takes its card's final size.
+  requestAnimationFrame(() => {
+    trimOverflowingAgendaDays();
+    drawDayCharts();
+  });
 
   {% if plugin_settings.displayGraph == "true" %}
   const canvas = document.getElementById('hourlyTemperatureChart');
@@ -318,18 +463,9 @@ document.addEventListener("DOMContentLoaded", function () {
   const peakGust = hasGust ? Math.max(...gusts.filter(isNum)) : peakWind;
   // Scale: 0 to the next multiple of 20 at or above the peak. Its ends are not written on screen.
   const windMax  = Math.max(20, Math.ceil(peakGust / 20) * 20);
-  const windUnit = isImperial ? "mph" : "kph";
+  const windUnit = "{{ wind_unit | replace('km/h', 'kph') }}";
 
   // Wind is drawn in the text colour at reduced strength so it recedes behind the weather.
-  function withAlpha(color, alpha) {
-    const probe = document.createElement('canvas').getContext('2d');
-    probe.fillStyle = '#000000';
-    probe.fillStyle = color;
-    const hex = probe.fillStyle;
-    if (!/^#[0-9a-f]{6}$/i.test(hex)) return color;
-    const n = parseInt(hex.slice(1), 16);
-    return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
-  }
   const windLine = withAlpha("{{ plugin_settings.textColor }}", 0.4);
   const windInk  = withAlpha("{{ plugin_settings.textColor }}", 0.67);
   const windDatasets = !showWind ? [] : [
@@ -519,7 +655,7 @@ document.addEventListener("DOMContentLoaded", function () {
     options: {
       layout: {
         padding: {
-          top:    {% if plugin_settings.displayGraphIcons == "true" %}12{% else %}8{% endif %}{% if plugin_settings.displayGraphSunEvents == "true" and sun_events %} + 26{% endif %},
+          top:    {% if plugin_settings.displayGraphIcons == "true" %}12{% else %}8{% endif %},
           bottom: {% if plugin_settings.displayGraphIcons == "true" %}18{% else %}0{% endif %}
         }
       },
@@ -629,31 +765,6 @@ document.addEventListener("DOMContentLoaded", function () {
   chart.data.datasets[2].backgroundColor = uvGradient;
 
   chart.update();
-
-  function positionSunEvents() {
-    const els = document.querySelectorAll('.wa-sun-event');
-    if (!els.length || !chart.scales || !chart.scales.x || !chart.scales.y) return;
-    const xScale = chart.scales.x;
-    const yScale = chart.scales.y;
-    const lastIndex = labels.length - 1;
-    if (lastIndex < 0) return;
-    const yFontSize = (yScale.options.ticks && yScale.options.ticks.font && yScale.options.ticks.font.size) || 18;
-    const topOffset = yScale.getPixelForValue(yScale.max) - yFontSize / 2;
-    els.forEach(el => {
-      const offset = parseFloat(el.dataset.hourOffset);
-      if (isNaN(offset)) return;
-      const clamped = Math.max(0, Math.min(lastIndex, offset));
-      const lo = Math.floor(clamped);
-      const hi = Math.min(lastIndex, lo + 1);
-      const frac = clamped - lo;
-      const xLo = xScale.getPixelForValue(lo);
-      const xHi = xScale.getPixelForValue(hi);
-      el.style.left = `${xLo + (xHi - xLo) * frac}px`;
-      el.style.top = `${topOffset}px`;
-    });
-  }
-  positionSunEvents();
-  window.addEventListener('resize', positionSunEvents);
   {% endif %}
 });
 </script>

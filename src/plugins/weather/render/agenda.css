@@ -248,64 +248,6 @@
   font-weight: bold;
 }
 
-/* --- Metrics rows --- */
-.wa-metrics-row {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-end;
-  gap: 1vw;
-  flex-shrink: 0;
-  overflow: visible;
-  margin-left: -2vw;
-}
-
-/* Each metric: icon left, label+value stacked right */
-.wa-data-point {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 0.5vw;
-  overflow: visible;
-  min-width: 0;
-}
-
-.wa-dp-icon {
-  height: min(5dvh, 3.5vw);
-  width: auto;
-  flex-shrink: 0;
-  object-fit: contain;
-}
-
-.wa-dp-text {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.wa-dp-label {
-  font-size: min(1.8dvh, 1.5vw);
-  opacity: 0.6;
-  white-space: nowrap;
-  line-height: 120%;
-}
-
-.wa-dp-value {
-  font-size: min(2.8dvh, 2.4vw);
-  font-weight: bold;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 120%;
-}
-
-.wa-dp-unit {
-  font-size: 0.75em;
-  font-weight: normal;
-  opacity: 0.8;
-}
-
 /* =========================================================================
    DIVIDER
    ========================================================================= */
@@ -418,6 +360,67 @@
   width: auto;
   object-fit: contain;
   pointer-events: none;
+}
+
+/* --- Forecast box with a day chart: one line of day stats over that day's chart --- */
+.wa-agenda-day-wx--chart {
+  gap: 0;
+}
+
+.wa-wx-summary {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.45vw;
+  flex-shrink: 0;
+  /* Same height, rule and spacing as .wa-agenda-day-header beside it, so the
+     two rules read as one line across the card. */
+  height: calc(min(2.4dvh, 2.4vw) * 1.2 + 0.2dvh + 1px);
+  padding-bottom: 0.2dvh;
+  margin-bottom: 0.2dvh;
+  border-bottom: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+.wa-wx-summary-icon {
+  height: min(2.7dvh, 2.2vw);
+  width: auto;
+  min-width: 0;
+  object-fit: contain;
+  /* Gives way first when the three stats are at their widest. */
+  flex-shrink: 1;
+}
+
+.wa-wx-summary-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.2vw;
+  flex-shrink: 0;
+  font-size: min(1.5dvh, 1.3vw);
+  font-weight: bold;
+  line-height: 1;
+}
+
+.wa-wx-summary-item img {
+  height: 1em;
+  width: 1em;
+  object-fit: contain;
+}
+
+/* Fills what is left of the box. The inner wrapper gives the canvas a size that
+   does not depend on the canvas itself. */
+.wa-wx-chart {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  margin-top: 0.3dvh;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.35);
+}
+
+.wa-wx-chart-inner {
+  position: absolute;
+  inset: 0;
 }
 
 .wa-wx-icon {
@@ -540,40 +543,6 @@
   width: 100%;
   height: 31dvh;
   flex-shrink: 0;
-}
-
-.wa-sun-events {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 0;
-  pointer-events: none;
-  z-index: 5;
-}
-
-.wa-sun-event {
-  position: absolute;
-  top: 0;
-  transform: translateX(-50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.2dvh;
-  white-space: nowrap;
-  line-height: 1;
-}
-
-.wa-sun-event img {
-  height: min(3dvh, 2.4vw);
-  width: auto;
-  object-fit: contain;
-  flex-shrink: 0;
-}
-
-.wa-sun-event-time {
-  font-size: min(1.4dvh, 1.2vw);
-  font-weight: bold;
 }
 
 /* =========================================================================

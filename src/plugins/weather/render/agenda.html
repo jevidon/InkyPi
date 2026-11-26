@@ -211,12 +211,16 @@
                   </div>
                 </div>
                 {% elif day_group.details %}
-                <!-- An outlook line beside the day's icon at the top; rain and wind with when, and UV, at the bottom -->
+                <!-- An outlook line beside the day's icon at the top; UV, then rain and wind with when, at the bottom -->
                 <div class="wa-wx-outlook">
                   <img class="wa-wx-outlook-icon" src="{{ day_group.forecast.icon }}" alt="">
                   <span class="wa-wx-outlook-text">{{ day_group.details.outlook }}</span>
                 </div>
                 <div class="wa-wx-timed">
+                  <div class="wa-wx-timed-row">
+                    <img src="{{ agenda_wx_icons.uvi }}" alt="">
+                    <span class="wa-wx-timed-value">UV {{ day_group.forecast.uvi }}</span>
+                  </div>
                   <div class="wa-wx-timed-row">
                     <img src="{{ agenda_wx_icons.precip }}" alt="Precip">
                     <span class="wa-wx-timed-value">{{ day_group.forecast.rain_pct }}%</span>
@@ -226,10 +230,6 @@
                     <img src="{{ agenda_wx_icons.wind }}" alt="Wind">
                     <span class="wa-wx-timed-value">{{ day_group.forecast.wind_speed }} {{ day_group.forecast.wind_unit | replace("km/h", "kph") }}</span>
                     <span class="wa-wx-timed-detail">{{ day_group.details.wind }}</span>
-                  </div>
-                  <div class="wa-wx-timed-row">
-                    <img src="{{ agenda_wx_icons.uvi }}" alt="">
-                    <span class="wa-wx-timed-value">UV {{ day_group.forecast.uvi }}</span>
                   </div>
                 </div>
                 {% else %}

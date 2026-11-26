@@ -461,7 +461,7 @@
 .wa-wx-timed {
   display: flex;
   flex-direction: column;
-  gap: 0.5dvh;
+  gap: 1dvh;
 }
 
 /* Each detail follows its own value, so a short value leaves the detail more room. */

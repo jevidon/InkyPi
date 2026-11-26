@@ -461,15 +461,6 @@
             </div>
         </div>
 
-        <div class="ws-row" data-layout="agenda">
-            <div class="ws-row-text">
-                <label for="showSecondaryTemp" class="ws-row-label">Second temperature unit</label>
-                <span class="ws-row-hint">Adds the other unit in brackets, like 9°C (48°F), to the current temperature and each day's high and low.</span>
-            </div>
-            <div class="ws-row-control">
-                <input type="checkbox" class="ws-switch" id="showSecondaryTemp" data-setting="showSecondaryTemp" checked>
-            </div>
-        </div>
     </section>
 
     <!-- ===== Heading: title, date and refresh time ===== -->
@@ -589,6 +580,16 @@
                 <input type="checkbox" class="ws-switch" id="agendaChartWind" data-setting="agendaChartWind" checked>
             </div>
         </div>
+
+        <div class="ws-row">
+            <div class="ws-row-text">
+                <label for="showSecondaryTemp" class="ws-row-label">Second temperature unit</label>
+                <span class="ws-row-hint">Adds the other unit in brackets, like 9°C (48°F), to the current temperature and each day's high and low.</span>
+            </div>
+            <div class="ws-row-control">
+                <input type="checkbox" class="ws-switch" id="showSecondaryTemp" data-setting="showSecondaryTemp" checked>
+            </div>
+        </div>
     </section>
 
     <!-- ===== Hourly chart ===== -->
@@ -602,7 +603,7 @@
                 <span class="ws-row-hint">Turn off to give its space to the rest of the screen.</span>
             </div>
             <div class="ws-row-control">
-                <input type="checkbox" class="ws-switch" id="displayGraph" data-setting="displayGraph" checked>
+                <input type="checkbox" class="ws-switch" id="displayGraph" data-setting="displayGraph">
             </div>
         </div>
 
@@ -624,16 +625,6 @@
                 </div>
                 <div class="ws-row-control">
                     <input type="checkbox" class="ws-switch" id="displayGraphWind" data-setting="displayGraphWind">
-                </div>
-            </div>
-
-            <div class="ws-row" data-layout="agenda">
-                <div class="ws-row-text">
-                    <label for="displayGraphSunEvents" class="ws-row-label">Sunrise and sunset</label>
-                    <span class="ws-row-hint">Marks both along the top of the chart.</span>
-                </div>
-                <div class="ws-row-control">
-                    <input type="checkbox" class="ws-switch" id="displayGraphSunEvents" data-setting="displayGraphSunEvents" checked>
                 </div>
             </div>
 

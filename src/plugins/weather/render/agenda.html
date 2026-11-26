@@ -244,16 +244,6 @@
   <!-- ===== CHART: Full-width, under both columns ===== -->
   {% if plugin_settings.displayGraph == "true" %}
   <div class="wa-chart-container">
-    {% if plugin_settings.displayGraphSunEvents == "true" and sun_events %}
-    <div class="wa-sun-events">
-      {% for evt in sun_events %}
-      <div class="wa-sun-event wa-sun-event-{{ evt.type }}" data-hour-offset="{{ evt.hour_offset }}">
-        <img src="{{ evt.icon }}" alt="{{ evt.type }}">
-        <span class="wa-sun-event-time">{{ evt.time }}</span>
-      </div>
-      {% endfor %}
-    </div>
-    {% endif %}
     <canvas id="hourlyTemperatureChart"></canvas>
   </div>
   {% endif %}
@@ -665,7 +655,7 @@ document.addEventListener("DOMContentLoaded", function () {
     options: {
       layout: {
         padding: {
-          top:    {% if plugin_settings.displayGraphIcons == "true" %}12{% else %}8{% endif %}{% if plugin_settings.displayGraphSunEvents == "true" and sun_events %} + 26{% endif %},
+          top:    {% if plugin_settings.displayGraphIcons == "true" %}12{% else %}8{% endif %},
           bottom: {% if plugin_settings.displayGraphIcons == "true" %}18{% else %}0{% endif %}
         }
       },
@@ -775,31 +765,6 @@ document.addEventListener("DOMContentLoaded", function () {
   chart.data.datasets[2].backgroundColor = uvGradient;
 
   chart.update();
-
-  function positionSunEvents() {
-    const els = document.querySelectorAll('.wa-sun-event');
-    if (!els.length || !chart.scales || !chart.scales.x || !chart.scales.y) return;
-    const xScale = chart.scales.x;
-    const yScale = chart.scales.y;
-    const lastIndex = labels.length - 1;
-    if (lastIndex < 0) return;
-    const yFontSize = (yScale.options.ticks && yScale.options.ticks.font && yScale.options.ticks.font.size) || 18;
-    const topOffset = yScale.getPixelForValue(yScale.max) - yFontSize / 2;
-    els.forEach(el => {
-      const offset = parseFloat(el.dataset.hourOffset);
-      if (isNaN(offset)) return;
-      const clamped = Math.max(0, Math.min(lastIndex, offset));
-      const lo = Math.floor(clamped);
-      const hi = Math.min(lastIndex, lo + 1);
-      const frac = clamped - lo;
-      const xLo = xScale.getPixelForValue(lo);
-      const xHi = xScale.getPixelForValue(hi);
-      el.style.left = `${xLo + (xHi - xLo) * frac}px`;
-      el.style.top = `${topOffset}px`;
-    });
-  }
-  positionSunEvents();
-  window.addEventListener('resize', positionSunEvents);
   {% endif %}
 });
 </script>

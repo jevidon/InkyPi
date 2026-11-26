@@ -816,20 +816,6 @@ class Weather(BasePlugin):
         data["hourly_forecast"] = self._parse_owm_hourly(
             hourly_list, tz, time_format, units, wind_unit, daily_forecast
         )
-        sun_dt_list = []
-        for day in daily_forecast:
-            sr = day.get("sunrise")
-            ss = day.get("sunset")
-            if sr:
-                sun_dt_list.append((datetime.fromtimestamp(sr, tz=timezone.utc).astimezone(tz), "sunrise"))
-            if ss:
-                sun_dt_list.append((datetime.fromtimestamp(ss, tz=timezone.utc).astimezone(tz), "sunset"))
-        if hourly_list:
-            start_dt = datetime.fromtimestamp(hourly_list[0]["dt"], tz=timezone.utc).astimezone(tz)
-            hours_count = min(24, len(hourly_list))
-            data["sun_events"] = self._compute_sun_events(start_dt, hours_count, sun_dt_list, time_format)
-        else:
-            data["sun_events"] = []
         return data
 
     def _parse_owm_forecast(self, daily_forecast, tz, current_suffix, lat, units, wind_unit):
@@ -976,32 +962,6 @@ class Weather(BasePlugin):
 
         return data_points
 
-    def _compute_sun_events(self, start_dt, hours_count, sun_dt_list, time_format):
-        """Return sun events that fall within the hourly chart's time window.
-
-        sun_dt_list is a sequence of (datetime, type) tuples where type is
-        "sunrise" or "sunset". Each returned event includes a fractional
-        ``hour_offset`` representing its position on the chart's index axis
-        (0 → first hour shown, hours_count - 1 → last hour shown), so the
-        renderer can interpolate between hourly tick positions.
-        """
-        if hours_count <= 0 or start_dt is None:
-            return []
-        max_offset = hours_count - 1
-        events = []
-        for evt_dt, evt_type in sun_dt_list:
-            offset = (evt_dt - start_dt).total_seconds() / 3600
-            if offset < 0 or offset > max_offset:
-                continue
-            events.append({
-                "type": evt_type,
-                "icon": self.get_plugin_dir(f"icons/{evt_type}.png"),
-                "time": self._format_time(evt_dt, time_format),
-                "hour_offset": round(offset, 4),
-            })
-        events.sort(key=lambda e: e["hour_offset"])
-        return events
-
     # --- Open-Meteo ---
 
     def _parse_open_meteo_data(self, weather_data, aqi_data, tz, units, wind_unit, time_format, lat):
@@ -1036,25 +996,6 @@ class Weather(BasePlugin):
             daily.get("sunrise", []), daily.get("sunset", [])
         )
         data["day_charts"] = self._parse_open_meteo_day_charts(hourly_data, units)
-        times = hourly_data.get("time", [])
-        sun_dt_list = []
-        for sr_s in daily.get("sunrise", []):
-            try:
-                sun_dt_list.append((_parse_local(sr_s, tz), "sunrise"))
-            except ValueError:
-                continue
-        for ss_s in daily.get("sunset", []):
-            try:
-                sun_dt_list.append((_parse_local(ss_s, tz), "sunset"))
-            except ValueError:
-                continue
-        if times:
-            start_index = self._open_meteo_hourly_start_index(times, tz)
-            start_dt = _parse_local(times[start_index], tz) if start_index < len(times) else None
-            hours_count = max(0, min(24, len(times) - start_index))
-            data["sun_events"] = self._compute_sun_events(start_dt, hours_count, sun_dt_list, time_format)
-        else:
-            data["sun_events"] = []
         return data
 
     def _parse_open_meteo_forecast(self, daily_data, units, wind_unit, lat):

@@ -60,7 +60,7 @@ LAYOUT_TEMPLATES = {
 # Values of the "agendaForecastStyle" setting: what each agenda card shows beside its events.
 AGENDA_FORECAST_STYLE_CHART = "chart"      # one line of day stats over that day's chart
 AGENDA_FORECAST_STYLE_SUMMARY = "summary"  # three rows of stats and a large weather icon
-AGENDA_FORECAST_STYLE_TIMED = "timed"      # an outlook line, then rain, wind and UV with when they happen
+AGENDA_FORECAST_STYLE_TIMED = "timed"      # an outlook line, then rain and wind with when, and UV
 # Days shown in the agenda layout, starting today.
 AGENDA_DAYS = 4
 # First hour drawn in each agenda card's day chart. The chart ends at the midnight
@@ -72,10 +72,6 @@ DAY_CHART_START_HOUR = 6
 WET_HOUR_RAIN = {"imperial": 0.004, "metric": 0.1, "standard": 0.1}
 # Chance of rain, in percent, from which a day with no wet hours is not called dry.
 DRY_DAY_MAX_CHANCE = 30
-# UV index from which the box gives the hours it lasts, and the name of each level.
-UV_WINDOW_FROM = 3
-UV_LEVELS = [(3, "low"), (6, "moderate"), (8, "high"), (11, "very high")]
-UV_LEVEL_TOP = "extreme"
 COMPASS_POINTS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
 # Open-Meteo weather codes: the sky on dry hours, and the kind of rain or snow on wet ones.
 # A dry hour with any other code counts as cloudy.
@@ -1265,8 +1261,8 @@ class Weather(BasePlugin):
     def _parse_open_meteo_day_details(self, hourly_data, forecast, units, time_format, tz):
         """What the timed forecast box says about each day, keyed by ISO date.
 
-        Each day has an outlook line, and the details shown beside its rain chance, wind
-        speed and UV index. Days the hourly data does not cover from midnight to 11 PM
+        Each day has an outlook line, and the details shown beside its rain chance and
+        wind speed. Days the hourly data does not cover from midnight to 11 PM
         are left out, and their cards fall back to the summary box.
         """
         index_by_time = {}
@@ -1292,15 +1288,12 @@ class Weather(BasePlugin):
             codes = [number("weather_code", index) for index in indices]
             # Open-Meteo gives each hour's rain at the hour's end: read it from the next time.
             rain = [number("precipitation", index + 1) or 0 for index in indices]
-            uv = [number("uv_index", index) or 0 for index in indices]
             gusts = [gust for gust in (number("wind_gusts_10m", index) for index in indices) if gust is not None]
             wet_hours = [hour for hour in range(24) if rain[hour] >= WET_HOUR_RAIN[units]]
-            uv_hours = [hour for hour in range(24) if uv[hour] >= UV_WINDOW_FROM]
             details[day["date"]] = {
                 "outlook": self._day_outlook(codes, wet_hours, time_format),
                 "rain": self._rain_detail(day, wet_hours, day_date, time_format, tz),
                 "wind": self._wind_detail(day, gusts),
-                "uv": self._uv_detail(day, uv_hours, day_date, time_format, tz),
             }
         return details
 
@@ -1419,14 +1412,6 @@ class Weather(BasePlugin):
         if gusts:
             parts.append(f"gusts {round(max(gusts))}")
         return " · ".join(parts)
-
-    def _uv_detail(self, day, uv_hours, day_date, time_format, tz):
-        """The UV level, and the hours it is at UV_WINDOW_FROM or above."""
-        uvi = day.get("uvi", 0)
-        level = next((name for below, name in UV_LEVELS if uvi < below), UV_LEVEL_TOP)
-        if not uv_hours:
-            return level
-        return f"{level} · {self._hour_range(uv_hours[0], uv_hours[-1] + 1, day_date, time_format, tz)}"
 
     def _parse_open_meteo_data_points(self, weather_data, aqi_data, units, wind_unit, tz, time_format):
         """Current conditions for the classic layout's metrics."""

@@ -99,20 +99,8 @@ class TestDetails:
         assert _plugin()._wind_detail(dict(self.DAY_FORECAST, wind_dir=""), [18]) == "gusts 18"
         assert _plugin()._wind_detail(self.DAY_FORECAST, []) == "SW"
 
-    @pytest.mark.parametrize("uvi, hours, expected", [
-        (9, range(10, 16), "very high · 10a-4p"),
-        (11, range(10, 16), "extreme · 10a-4p"),
-        (6, range(11, 14), "high · 11a-2p"),
-        (4, range(12, 13), "moderate · 12-1p"),
-        (2, [], "low"),
-    ])
-    def test_uv_gives_its_level_and_hours(self, uvi, hours, expected):
-        day = dict(self.DAY_FORECAST, uvi=uvi)
-        assert _plugin()._uv_detail(day, list(hours), DAY, "12h", TZ) == expected
-
     def test_24_hour_ranges_are_whole_hours(self):
         day = dict(self.DAY_FORECAST)
-        assert _plugin()._uv_detail(day, list(range(10, 16)), DAY, "24h", TZ) == "very high · 10–16"
         assert _plugin()._rain_detail(day, list(range(20, 24)), DAY, "24h", TZ) == "5 mm · 20–24"
 
     @pytest.mark.parametrize("degrees, point", [(0, "N"), (44, "NE"), (180, "S"), (225, "SW"), (350, "N"), (None, "")])
@@ -150,7 +138,7 @@ class TestDayDetailsFromOpenMeteo:
 
         assert set(details) == {"2026-11-30", "2026-12-01"}
         assert details["2026-11-30"] == {
-            "outlook": "Cloudy all day", "rain": "little expected", "wind": "W · gusts 20", "uv": "low",
+            "outlook": "Cloudy all day", "rain": "little expected", "wind": "W · gusts 20",
         }
 
     def test_rain_belongs_to_the_hour_before_its_time(self):
@@ -208,6 +196,7 @@ def _template_params(**settings):
             "temperature_2m_min": [8] * 3,
             "sunrise": [day.strftime("%Y-%m-%dT06:00") for day in days],
             "sunset": [day.strftime("%Y-%m-%dT20:00") for day in days],
+            "uv_index_max": [7.6] * 3,
         },
         "hourly": {
             "time": [(midnight + timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M") for h in range(hours)],
@@ -258,4 +247,6 @@ class TestTimedStyleSetting:
 
         assert html.count('class="wa-agenda-day-wx wa-agenda-day-wx--timed"') == 3
         assert '<span class="wa-wx-outlook-text">Cloudy all day</span>' in html
-        assert html.count('class="wa-wx-timed-detail"') == 9
+        # Rain and wind have details; the UV row is its label and value.
+        assert html.count('class="wa-wx-timed-detail"') == 6
+        assert html.count('<span class="wa-wx-timed-value">UV 8</span>') == 3

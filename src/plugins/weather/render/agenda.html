@@ -211,7 +211,7 @@
                   </div>
                 </div>
                 {% elif day_group.details %}
-                <!-- An outlook line beside the day's icon, then rain, wind and UV with when they happen -->
+                <!-- An outlook line beside the day's icon at the top; rain and wind with when, and UV, at the bottom -->
                 <div class="wa-wx-outlook">
                   <img class="wa-wx-outlook-icon" src="{{ day_group.forecast.icon }}" alt="">
                   <span class="wa-wx-outlook-text">{{ day_group.details.outlook }}</span>
@@ -228,9 +228,8 @@
                     <span class="wa-wx-timed-detail">{{ day_group.details.wind }}</span>
                   </div>
                   <div class="wa-wx-timed-row">
-                    <img src="{{ agenda_wx_icons.uvi }}" alt="UV">
-                    <span class="wa-wx-timed-value">{{ day_group.forecast.uvi }}</span>
-                    <span class="wa-wx-timed-detail">{{ day_group.details.uv }}</span>
+                    <img src="{{ agenda_wx_icons.uvi }}" alt="">
+                    <span class="wa-wx-timed-value">UV {{ day_group.forecast.uvi }}</span>
                   </div>
                 </div>
                 {% else %}

@@ -423,11 +423,13 @@
   inset: 0;
 }
 
-/* --- Forecast box with timed metrics: an outlook line, then rain, wind and UV
-       with when they happen --- */
+/* --- Forecast box with timed metrics: an outlook line at the top; rain and wind
+       with when they happen, and UV, at the bottom --- */
 .wa-agenda-day-wx--timed {
-  justify-content: center;
+  justify-content: space-between;
   gap: 0.6dvh;
+  padding-top: 0.2dvh;
+  padding-bottom: 0.3dvh;
 }
 
 .wa-wx-outlook {

@@ -9,7 +9,7 @@ import requests
 # so src/ must be importable the same way it is at runtime.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src"))
 
-from plugins.weather_agenda.weather_agenda import WeatherAgenda  # noqa: E402
+from plugins.weather_agenda.weather_agenda import WeatherAgenda, _request_open_meteo  # noqa: E402
 
 MODULE = "plugins.weather_agenda.weather_agenda"
 
@@ -111,6 +111,7 @@ def _run(settings, device_config, apis):
         return object()
 
     with patch(f"{MODULE}.requests.get", side_effect=apis), \
+            patch(f"{MODULE}.time.sleep"), \
             patch.object(plugin, "render_image", side_effect=fake_render):
         plugin.generate_image(settings, device_config)
     return captured
@@ -182,15 +183,60 @@ class TestOpenMeteoFallback:
 
         assert not apis.called("open-meteo.com")
 
-    def test_open_meteo_requests_use_short_timeout(self):
+    def test_open_meteo_requests_use_extended_timeout(self):
         apis = FakeApis()
         with patch(f"{MODULE}.requests.get", side_effect=apis) as get:
             plugin = WeatherAgenda({"id": "weather_agenda"})
             plugin._get_open_meteo_data(40.7, -74.0, "imperial", 8, "America/New_York")
             plugin._get_open_meteo_air_quality(40.7, -74.0, "America/New_York")
         for call in get.call_args_list:
-            connect, read = call.kwargs["timeout"]
-            assert connect + read <= 15
+            assert call.kwargs["timeout"] == (15, 30)
+
+
+class TestOpenMeteoRetries:
+
+    def test_tls_timeouts_are_retried_with_exponential_backoff(self):
+        response = _response(OPEN_METEO_DATA)
+        timeout = requests.exceptions.ReadTimeout("TLS handshake stalled")
+        with patch(f"{MODULE}.requests.get", side_effect=[timeout, timeout, response]) as get, \
+                patch(f"{MODULE}.time.sleep") as sleep:
+            result = _request_open_meteo("https://api.open-meteo.com/v1/forecast")
+
+        assert result is response
+        assert get.call_count == 3
+        assert [call.args[0] for call in sleep.call_args_list] == [1, 2]
+        assert all(call.kwargs["timeout"] == (15, 30) for call in get.call_args_list)
+
+    def test_transient_http_errors_are_retried(self):
+        unavailable = _response({}, status=503)
+        response = _response(OPEN_METEO_DATA)
+        with patch(f"{MODULE}.requests.get", side_effect=[unavailable, response]) as get, \
+                patch(f"{MODULE}.time.sleep") as sleep:
+            result = _request_open_meteo("https://api.open-meteo.com/v1/forecast")
+
+        assert result is response
+        assert get.call_count == 2
+        sleep.assert_called_once_with(1)
+
+    def test_retry_attempts_are_bounded(self):
+        timeout = requests.exceptions.ReadTimeout("TLS handshake stalled")
+        with patch(f"{MODULE}.requests.get", side_effect=timeout) as get, \
+                patch(f"{MODULE}.time.sleep") as sleep, \
+                pytest.raises(requests.exceptions.ReadTimeout):
+            _request_open_meteo("https://api.open-meteo.com/v1/forecast")
+
+        assert get.call_count == 3
+        assert [call.args[0] for call in sleep.call_args_list] == [1, 2]
+
+    def test_non_retryable_http_error_returns_immediately(self):
+        response = _response({}, status=400)
+        with patch(f"{MODULE}.requests.get", return_value=response) as get, \
+                patch(f"{MODULE}.time.sleep") as sleep:
+            result = _request_open_meteo("https://api.open-meteo.com/v1/forecast")
+
+        assert result is response
+        get.assert_called_once()
+        sleep.assert_not_called()
 
 
 class TestBackupSourceTemplate:

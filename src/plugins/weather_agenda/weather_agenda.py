@@ -1,5 +1,6 @@
 import requests
 import logging
+import time
 from datetime import datetime, timedelta, timezone, date as date_type, time as time_type
 from astral import moon
 import pytz
@@ -86,7 +87,45 @@ OPEN_METEO_UNIT_PARAMS = {
 # (connect, read) seconds. urllib3 performs the TLS handshake inside connect(),
 # so a server that accepts TCP but never completes TLS is cut off by the
 # connect value; the read value bounds each wait for response data.
-OPEN_METEO_TIMEOUT = (5, 10)
+OPEN_METEO_TIMEOUT = (15, 30)
+OPEN_METEO_MAX_ATTEMPTS = 3
+OPEN_METEO_BACKOFF_SECONDS = 1
+OPEN_METEO_RETRYABLE_STATUSES = frozenset({500, 502, 503, 504})
+OPEN_METEO_RETRYABLE_EXCEPTIONS = (
+    requests.exceptions.ConnectionError,
+    requests.exceptions.Timeout,
+)
+
+
+def _request_open_meteo(url):
+    """Fetch an Open-Meteo URL with bounded retries for transient failures.
+
+    TLS handshake failures surface as requests.ReadTimeout even though urllib3
+    applies the connect timeout while establishing the connection. Retry both
+    timeout and connection exception families to cover that case.
+    """
+    for attempt in range(OPEN_METEO_MAX_ATTEMPTS):
+        try:
+            response = requests.get(url, timeout=OPEN_METEO_TIMEOUT)
+        except OPEN_METEO_RETRYABLE_EXCEPTIONS as error:
+            if attempt == OPEN_METEO_MAX_ATTEMPTS - 1:
+                raise
+            failure = str(error)
+        else:
+            retryable_status = response.status_code in OPEN_METEO_RETRYABLE_STATUSES
+            if not retryable_status or attempt == OPEN_METEO_MAX_ATTEMPTS - 1:
+                return response
+            failure = f"HTTP {response.status_code}"
+
+        delay = OPEN_METEO_BACKOFF_SECONDS * (2 ** attempt)
+        logger.warning(
+            "Open-Meteo request attempt %d/%d failed (%s); retrying in %ds.",
+            attempt + 1,
+            OPEN_METEO_MAX_ATTEMPTS,
+            failure,
+            delay,
+        )
+        time.sleep(delay)
 
 
 # ---------------------------------------------------------------------------
@@ -478,7 +517,7 @@ class WeatherAgenda(BasePlugin):
             lat=lat, long=long, forecast_days=forecast_days,
             timezone=url_quote(timezone_name, safe=""),
         ) + f"&{unit_params}"
-        response = requests.get(url, timeout=OPEN_METEO_TIMEOUT)
+        response = _request_open_meteo(url)
         if not 200 <= response.status_code < 300:
             logger.error(f"Failed to retrieve Open-Meteo data: {response.content}")
             raise RuntimeError("Failed to retrieve Open-Meteo weather data.")
@@ -488,7 +527,7 @@ class WeatherAgenda(BasePlugin):
         url = OPEN_METEO_AIR_QUALITY_URL.format(
             lat=lat, long=long, timezone=url_quote(timezone_name, safe=""),
         )
-        response = requests.get(url, timeout=OPEN_METEO_TIMEOUT)
+        response = _request_open_meteo(url)
         if not 200 <= response.status_code < 300:
             logger.error(f"Failed to retrieve Open-Meteo air quality: {response.content}")
             raise RuntimeError("Failed to retrieve Open-Meteo air quality data.")

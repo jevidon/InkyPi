@@ -88,13 +88,16 @@
     const ctx = canvas.getContext('2d');
     const rect = canvas.getBoundingClientRect();
 
-    // Extract hourly temperature and labels from template variables
-    const labels = [{% for hour in hourly_forecast %}"{{ hour.time }}"{% if not loop.last %}, {% endif %}{% endfor %}];
-    const temperatures = [{% for hour in hourly_forecast %}{{ hour.temperature }}{% if not loop.last %}, {% endif %}{% endfor %}];
-    const precipitation = [{% for hour in hourly_forecast %}{{ hour.precipitation * 100}}{% if not loop.last %}, {% endif %}{% endfor %}]; // Convert to percentage
-    const rain = [{% for hour in hourly_forecast %}{{ hour.rain or 0 }}{% if not loop.last %}, {% endif %}{% endfor %}];
-    const weatherIconsPaths = [{% for hour in hourly_forecast %}"{{ hour.icon | replace('\\', '/') }}"{% if not loop.last %}, {% endif %}{% endfor %}];
-	const iconStep = parseInt("{{ plugin_settings.graphIconStep or 2 }}");
+    // One bar every 1, 2 or 3 hours across the chosen span, each centred on its first hour. The
+    // chart's last point only closes the agenda layout's line, so it is left out here.
+    {% set steps = hourly_chart[:-1] %}
+    const labels = [{% for hour in steps %}"{{ hour.time }}"{% if not loop.last %}, {% endif %}{% endfor %}];
+    const temperatures = [{% for hour in steps %}{{ hour.temperature }}{% if not loop.last %}, {% endif %}{% endfor %}];
+    const precipitation = [{% for hour in steps %}{{ hour.precipitation * 100}}{% if not loop.last %}, {% endif %}{% endfor %}]; // Convert to percentage
+    const rain = [{% for hour in steps %}{{ hour.rain or 0 }}{% if not loop.last %}, {% endif %}{% endfor %}];
+    const weatherIconsPaths = [{% for hour in steps %}"{{ hour.icon | replace('\\', '/') }}"{% if not loop.last %}, {% endif %}{% endfor %}];
+	// A weather icon under every other bar: every 2, 4 or 6 hours.
+	const iconStep = 2;
 	const units = document.getElementById('units-container').dataset.units;
 	const isImperial = units === "imperial";
 	const unit = isImperial ? "in" : "mm";

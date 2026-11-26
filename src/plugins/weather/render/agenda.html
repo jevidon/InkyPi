@@ -439,15 +439,20 @@ document.addEventListener("DOMContentLoaded", function () {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
 
-  const labels        = [{% for h in hourly_forecast %}"{{ h.time }}"{% if not loop.last %}, {% endif %}{% endfor %}];
-  const temperatures  = [{% for h in hourly_forecast %}{{ h.temperature }}{% if not loop.last %}, {% endif %}{% endfor %}];
-  const precipitation = [{% for h in hourly_forecast %}{{ h.precipitation * 100 }}{% if not loop.last %}, {% endif %}{% endfor %}];
-  const rain          = [{% for h in hourly_forecast %}{{ h.rain or 0 }}{% if not loop.last %}, {% endif %}{% endfor %}];
-  const uvIndex       = [{% for h in hourly_forecast %}{{ h.uv_index or 0 }}{% if not loop.last %}, {% endif %}{% endfor %}];
-  const windRaw       = [{% for h in hourly_forecast %}{{ h.wind_speed if h.wind_speed is number else 'null' }}{% if not loop.last %}, {% endif %}{% endfor %}];
-  const gustRaw       = [{% for h in hourly_forecast %}{{ h.wind_gust if h.wind_gust is number else 'null' }}{% if not loop.last %}, {% endif %}{% endfor %}];
-  const iconPaths     = [{% for h in hourly_forecast %}"{{ h.icon | replace('\\', '/') }}"{% if not loop.last %}, {% endif %}{% endfor %}];
-  const iconStep      = parseInt("{{ plugin_settings.graphIconStep or 2 }}");
+  // One point every 1, 2 or 3 hours across the chosen span. Each point's rain bar runs to the
+  // next point, so there is one bar fewer than points and the last point only closes the line.
+  const labels        = [{% for h in hourly_chart %}"{{ h.time }}"{% if not loop.last %}, {% endif %}{% endfor %}];
+  const days          = [{% for h in hourly_chart %}"{{ h.day }}"{% if not loop.last %}, {% endif %}{% endfor %}];
+  const temperatures  = [{% for h in hourly_chart %}{{ h.temperature }}{% if not loop.last %}, {% endif %}{% endfor %}];
+  const rain          = [{% for h in hourly_chart[:-1] %}{{ h.rain or 0 }}{% if not loop.last %}, {% endif %}{% endfor %}];
+  const uvIndex       = [{% for h in hourly_chart %}{{ h.uv_index or 0 }}{% if not loop.last %}, {% endif %}{% endfor %}];
+  const windRaw       = [{% for h in hourly_chart %}{{ h.wind_speed if h.wind_speed is number else 'null' }}{% if not loop.last %}, {% endif %}{% endfor %}];
+  const gustRaw       = [{% for h in hourly_chart %}{{ h.wind_gust if h.wind_gust is number else 'null' }}{% if not loop.last %}, {% endif %}{% endfor %}];
+  const iconPaths     = [{% for h in hourly_chart %}"{{ h.icon | replace('\\', '/') }}"{% if not loop.last %}, {% endif %}{% endfor %}];
+  if (labels.length < 2) return;
+  // Times and weather icons go under every other point, but not the two ends, where they would
+  // be cut off. That is every 2, 4 or 6 hours.
+  const isMarked      = i => i > 0 && i < labels.length - 1 && i % 2 === 0;
   const units         = document.getElementById('units-container').dataset.units;
   const isImperial    = units === "imperial";
   const rainUnit      = isImperial ? "in" : "mm";
@@ -507,15 +512,8 @@ document.addEventListener("DOMContentLoaded", function () {
     return '#22c55e';
   }
 
-  const rainMax = Math.max(...rain);
+  const rainMax = Math.max(0, ...rain);
   const y1Max   = Math.max(rainMax, isImperial ? 0.1 : 2.5);
-
-  // Edge bars are centered on the chart's left/right extents and get clipped
-  // in half. Hide them so the chart doesn't show chopped-off rain bars.
-  if (rain.length) {
-    rain[0] = null;
-    rain[rain.length - 1] = null;
-  }
 
   Chart.register({
     id: 'annotationRain',
@@ -554,7 +552,7 @@ document.addEventListener("DOMContentLoaded", function () {
       const iconSize = 31;
       ctx.save();
       chart.getDatasetMeta(0).data.forEach((point, i) => {
-        if (i === 0 || i % iconStep !== 0) return;
+        if (!isMarked(i)) return;
         const img = new Image();
         img.src = iconPaths[i];
         const xPos = point.x - (iconSize / 2);
@@ -634,7 +632,10 @@ document.addEventListener("DOMContentLoaded", function () {
           data: rain,
           borderColor: 'rgba(26, 111, 176, 1)',
           borderWidth: { top: 2, right: 0, bottom: 0, left: 0 },
+          xAxisID: 'xBars',
           yAxisID: 'y1',
+          // Not grouped: Chart.js would split each slot between this axis and the lines' axis.
+          grouped: false,
           barPercentage: 1.0,
           categoryPercentage: 1.0,
           fill: true,
@@ -669,14 +670,22 @@ document.addEventListener("DOMContentLoaded", function () {
             maxRotation: 0, minRotation: 0,
             color: "{{ plugin_settings.textColor }}",
             font: { family: 'Jost', size: 14 },
-            callback: function(value, index, values) {
-              if (index === 0 || index === values.length - 1) return '';
-              if (index % iconStep !== 0) return '';
-              return this.getLabelForValue(value);
+            callback: function(value, index) {
+              if (!isMarked(index)) return '';
+              // The first time on each new day names the day, so a chart over days reads clearly.
+              const label = this.getLabelForValue(value);
+              return days[index] !== days[index - 2] ? `${days[index]} ${label}` : label;
             }
           },
           grid: { tickLength: 0, display: false },
           offset: false
+        },
+        // The rain bars' own axis: one slot per bar, each filling the gap between two points.
+        xBars: {
+          type: 'category',
+          labels: rain.map((_, i) => i),
+          display: false,
+          offset: true,
         },
         y: {
           ticks: {

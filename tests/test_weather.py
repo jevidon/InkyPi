@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 from unittest.mock import MagicMock, patch
@@ -245,6 +246,78 @@ class TestOpenMeteoRetries:
         assert result is response
         get.assert_called_once()
         sleep.assert_not_called()
+
+
+class TestOpenMeteoCache:
+
+    @staticmethod
+    def _failed_apis():
+        return FakeApis(
+            open_meteo_error=requests.exceptions.ReadTimeout("open-meteo down"),
+            owm_error=requests.exceptions.ConnectionError("owm down"),
+        )
+
+    def test_last_good_payload_is_used_when_both_providers_fail(self, caplog):
+        settings = _settings()
+        config = _device_config(api_key="key")
+        seeded = _run(settings, config, FakeApis())
+        assert seeded["backup_source"] is None
+
+        params = _run(settings, config, self._failed_apis())
+
+        assert params["backup_source"] == "Open-Meteo cache"
+        assert params["current_temperature"] == seeded["current_temperature"]
+        assert "Using cached Open-Meteo data" in caplog.text
+
+    def test_working_owm_takes_priority_over_the_cache(self):
+        settings = _settings()
+        config = _device_config(api_key="key")
+        _run(settings, config, FakeApis())
+        apis = FakeApis(open_meteo_error=requests.exceptions.ReadTimeout("open-meteo down"))
+
+        params = _run(settings, config, apis)
+
+        assert params["backup_source"] == "OpenWeatherMap"
+        assert params["current_temperature"] == "50"
+
+    def test_cache_is_not_reused_for_different_request_settings(self):
+        config = _device_config(api_key="key")
+        _run(_settings(), config, FakeApis())
+
+        with pytest.raises(RuntimeError, match="OpenMeteo request failure"):
+            _run(_settings(latitude="51.5"), config, self._failed_apis())
+
+    def test_expired_cache_is_rejected(self, tmp_path):
+        settings = _settings()
+        config = _device_config(api_key="key")
+        _run(settings, config, FakeApis())
+        cache_path = tmp_path / "open_meteo_cache.json"
+        cache = json.loads(cache_path.read_text())
+        entry = next(iter(cache["entries"].values()))
+        entry["fetched_at"] = 0
+        cache_path.write_text(json.dumps(cache))
+
+        with pytest.raises(RuntimeError, match="OpenMeteo request failure"):
+            _run(settings, config, self._failed_apis())
+
+    def test_corrupt_cache_preserves_the_original_provider_error(self, tmp_path, caplog):
+        settings = _settings()
+        config = _device_config(api_key="key")
+        _run(settings, config, FakeApis())
+        (tmp_path / "open_meteo_cache.json").write_text("not json")
+
+        with pytest.raises(RuntimeError, match="OpenMeteo request failure"):
+            _run(settings, config, self._failed_apis())
+        assert "Unable to read Open-Meteo cache" in caplog.text
+        assert "fallback to OpenWeatherMap also failed: owm down" in caplog.text
+
+    def test_cache_write_failure_does_not_break_a_live_refresh(self, caplog):
+        with patch("plugins.weather.weather.os.replace", side_effect=OSError("disk full")):
+            params = _run(_settings(), _device_config(api_key="key"), FakeApis())
+
+        assert params["backup_source"] is None
+        assert params["current_temperature"] == "10"
+        assert "Unable to write Open-Meteo cache" in caplog.text
 
 
 class TestBackupSourceTemplate:

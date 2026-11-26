@@ -1,5 +1,8 @@
+import hashlib
+import json
 import logging
 import math
+import os
 import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone, date as date_type, time as time_type
@@ -177,6 +180,11 @@ OPEN_METEO_RETRYABLE_EXCEPTIONS = (
     requests.exceptions.ConnectionError,
     requests.exceptions.Timeout,
 )
+OPEN_METEO_CACHE_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "config", "open_meteo_cache.json")
+)
+OPEN_METEO_CACHE_MAX_AGE_SECONDS = 24 * 60 * 60
+OPEN_METEO_CACHE_MAX_ENTRIES = 8
 
 
 def _request_open_meteo(url):
@@ -208,6 +216,80 @@ def _request_open_meteo(url):
             delay,
         )
         time.sleep(delay)
+
+
+def _open_meteo_cache_key(lat, long, units, wind_unit, request_tz):
+    """Identify all request settings that affect the cached provider response."""
+    serialized = json.dumps(
+        [lat, long, units, wind_unit, request_tz], separators=(",", ":"), ensure_ascii=True
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _read_open_meteo_cache():
+    try:
+        with open(OPEN_METEO_CACHE_PATH, encoding="utf-8") as cache_file:
+            cache = json.load(cache_file)
+    except FileNotFoundError:
+        return {}
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        logger.warning(f"Unable to read Open-Meteo cache: {error}")
+        return {}
+    return cache if isinstance(cache, dict) else {}
+
+
+def _load_open_meteo_payload(cache_key):
+    cache = _read_open_meteo_cache()
+    entries = cache.get("entries")
+    if cache.get("version") != 1 or not isinstance(entries, dict):
+        return None
+    entry = entries.get(cache_key)
+    if not isinstance(entry, dict):
+        return None
+    try:
+        age = time.time() - float(entry["fetched_at"])
+        weather_data = entry["weather_data"]
+        aqi_data = entry["air_quality_data"]
+    except (KeyError, TypeError, ValueError):
+        return None
+    if age > OPEN_METEO_CACHE_MAX_AGE_SECONDS:
+        return None
+    if not isinstance(weather_data, dict) or not isinstance(aqi_data, dict):
+        return None
+    return weather_data, aqi_data
+
+
+def _store_open_meteo_payload(cache_key, weather_data, aqi_data):
+    """Persist a last-good payload without turning a cache error into a refresh error."""
+    cache = _read_open_meteo_cache()
+    entries = cache.get("entries")
+    if cache.get("version") != 1 or not isinstance(entries, dict):
+        entries = {}
+    entries[cache_key] = {
+        "fetched_at": time.time(),
+        "weather_data": weather_data,
+        "air_quality_data": aqi_data,
+    }
+
+    def fetched_at(item):
+        try:
+            return float(item[1].get("fetched_at", 0))
+        except (AttributeError, TypeError, ValueError):
+            return 0
+
+    entries = dict(sorted(entries.items(), key=fetched_at, reverse=True)[:OPEN_METEO_CACHE_MAX_ENTRIES])
+    temporary_path = f"{OPEN_METEO_CACHE_PATH}.{os.getpid()}.tmp"
+    try:
+        os.makedirs(os.path.dirname(OPEN_METEO_CACHE_PATH), exist_ok=True)
+        with open(temporary_path, "w", encoding="utf-8") as cache_file:
+            json.dump({"version": 1, "entries": entries}, cache_file)
+        os.replace(temporary_path, OPEN_METEO_CACHE_PATH)
+    except (OSError, TypeError, ValueError) as error:
+        logger.warning(f"Unable to write Open-Meteo cache: {error}")
+        try:
+            os.remove(temporary_path)
+        except OSError:
+            pass
 
 
 class Weather(BasePlugin):
@@ -270,10 +352,19 @@ class Weather(BasePlugin):
                         lat, long, units, wind_unit, tz, use_location_tz, time_format
                     )
                 except Exception as e:
-                    template_params = self._get_owm_fallback(
-                        e, device_config, lat, long, units, wind_unit, tz, use_location_tz, time_format
-                    )
-                    backup_source = "OpenWeatherMap"
+                    try:
+                        template_params = self._get_owm_fallback(
+                            e, device_config, lat, long, units, wind_unit, tz, use_location_tz, time_format
+                        )
+                        backup_source = "OpenWeatherMap"
+                    except Exception as owm_error:
+                        template_params = self._get_cached_open_meteo_params(
+                            lat, long, units, wind_unit, tz, use_location_tz, time_format
+                        )
+                        if template_params is None:
+                            raise
+                        backup_source = "Open-Meteo cache"
+                        logger.warning(f"Using cached Open-Meteo data after live providers failed: {owm_error}")
             else:
                 raise RuntimeError(f"Unknown weather provider: {weather_provider}")
             template_params["title"] = title
@@ -654,7 +745,31 @@ class Weather(BasePlugin):
         weather_data = self._get_open_meteo_data(lat, long, units, wind_unit, OPEN_METEO_FORECAST_DAYS, request_tz)
         aqi_data = self._get_open_meteo_air_quality(lat, long, request_tz)
         weather_tz = self._open_meteo_timezone(weather_data, tz) if use_location_tz else tz
-        return self._parse_open_meteo_data(weather_data, aqi_data, weather_tz, units, wind_unit, time_format, lat)
+        template_params = self._parse_open_meteo_data(
+            weather_data, aqi_data, weather_tz, units, wind_unit, time_format, lat
+        )
+        _store_open_meteo_payload(
+            _open_meteo_cache_key(lat, long, units, wind_unit, request_tz), weather_data, aqi_data
+        )
+        return template_params
+
+    def _get_cached_open_meteo_params(self, lat, long, units, wind_unit, tz, use_location_tz, time_format):
+        """Render from the last good matching Open-Meteo payload, if available."""
+        request_tz = "auto" if use_location_tz else tz.zone
+        payload = _load_open_meteo_payload(
+            _open_meteo_cache_key(lat, long, units, wind_unit, request_tz)
+        )
+        if payload is None:
+            return None
+        weather_data, aqi_data = payload
+        weather_tz = self._open_meteo_timezone(weather_data, tz) if use_location_tz else tz
+        try:
+            return self._parse_open_meteo_data(
+                weather_data, aqi_data, weather_tz, units, wind_unit, time_format, lat
+            )
+        except Exception as error:
+            logger.warning(f"Cached Open-Meteo data could not be used: {error}")
+            return None
 
     def _get_owm_fallback(self, error, device_config, lat, long, units, wind_unit, tz, use_location_tz, time_format):
         """Return OpenWeatherMap template params after an Open-Meteo failure.

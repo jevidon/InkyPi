@@ -66,6 +66,18 @@ AGENDA_DAYS = 4
 DAY_CHART_START_HOUR = 6
 
 # ---------------------------------------------------------------------------
+# Hourly chart
+# ---------------------------------------------------------------------------
+
+# Values of the "graphHours" setting: how many hours ahead the hourly chart reaches.
+CHART_HOURS_CHOICES = (24, 48, 72)
+CHART_HOURS_DEFAULT = 24
+# Rain bars on the hourly chart, whatever its span: each covers 1, 2 or 3 hours.
+CHART_BARS = 24
+# Hourly entries kept from the provider: the longest chart and the hour that closes it.
+HOURLY_FORECAST_HOURS = max(CHART_HOURS_CHOICES) + 1
+
+# ---------------------------------------------------------------------------
 # Units
 # ---------------------------------------------------------------------------
 
@@ -250,6 +262,9 @@ class Weather(BasePlugin):
         template_params["layout"] = layout
         template_params["wind_unit"] = wind_unit
         template_params["plugin_settings"] = settings
+        template_params["hourly_chart"] = self._chart_points(
+            template_params.get("hourly_forecast", []), self._chart_hours(settings) // CHART_BARS
+        )
 
         now = datetime.now(tz)
         if time_format == "24h":
@@ -293,6 +308,34 @@ class Weather(BasePlugin):
     def _owm_wind_factor(units, wind_unit):
         """Factor from OpenWeatherMap's wind speed to the display unit."""
         return OWM_WIND_FACTORS["mph" if units == "imperial" else "m/s"][wind_unit]
+
+    @staticmethod
+    def _chart_hours(settings):
+        """Hours the hourly chart reaches ahead: the chosen span, or 24."""
+        try:
+            hours = int(settings.get("graphHours", CHART_HOURS_DEFAULT))
+        except (TypeError, ValueError):
+            return CHART_HOURS_DEFAULT
+        return hours if hours in CHART_HOURS_CHOICES else CHART_HOURS_DEFAULT
+
+    @staticmethod
+    def _chart_points(hourly, step):
+        """The hourly chart's points: one every `step` hours, CHART_BARS + 1 of them.
+
+        A point keeps its hour's time, temperature, wind, UV and icon. Its rain is the
+        rain bar that runs from it to the next point: the total over its `step` hours,
+        and their highest chance of rain. The last point only closes the line, so its
+        bar is not drawn. Fewer points come back when the hourly data runs out first.
+        """
+        points = []
+        for start in range(0, min(len(hourly), (CHART_BARS + 1) * step), step):
+            hours = hourly[start:start + step]
+            points.append({
+                **hours[0],
+                "rain": round(sum(h.get("rain") or 0 for h in hours), 2),
+                "precipitation": max(h.get("precipitation") or 0 for h in hours),
+            })
+        return points
 
     # ==================================================================
     # Agenda layout
@@ -887,7 +930,8 @@ class Weather(BasePlugin):
             sun_map[day_date] = (day["sunrise"], day["sunset"])
 
         wind_factor = self._owm_wind_factor(units, wind_unit)
-        for hour in hourly_list[:24]:
+        # Up to 48 hours: what OpenWeatherMap's hourly forecast covers.
+        for hour in hourly_list[:HOURLY_FORECAST_HOURS]:
             dt_epoch = hour.get("dt")
             dt = datetime.fromtimestamp(dt_epoch, tz=timezone.utc).astimezone(tz)
             rain_mm = hour.get("rain", {}).get("1h", 0.0)
@@ -902,6 +946,7 @@ class Weather(BasePlugin):
             precip_value = (total_precip_mm / 25.4) if units == "imperial" else total_precip_mm
             hourly.append({
                 "time": self._format_time(dt, time_format, hour_only=True),
+                "day": dt.strftime("%a"),
                 "temperature": int(hour.get("temp")),
                 "wind_speed": self._hourly_wind(hour.get("wind_speed"), wind_factor),
                 "wind_gust": self._hourly_wind(hour.get("wind_gust"), wind_factor),
@@ -1104,7 +1149,11 @@ class Weather(BasePlugin):
         s_wind = wind_speeds[start_index:]
         s_gust = wind_gusts[start_index:]
 
-        for i in range(min(24, len(s_times))):
+        def number(values, i):
+            value = values[i] if i < len(values) else None
+            return value if isinstance(value, (int, float)) and not isinstance(value, bool) else 0
+
+        for i in range(min(HOURLY_FORECAST_HOURS, len(s_times))):
             dt = _parse_local(s_times[i], tz)
             sunrise, sunset = sun_map.get(dt.date(), (None, None))
             is_day = 1 if (sunrise and sunset and sunrise <= dt < sunset) else 0
@@ -1112,11 +1161,14 @@ class Weather(BasePlugin):
             icon_name = self._map_weather_code_to_icon(code, is_day)
             hourly.append({
                 "time": self._format_time(dt, time_format, True),
+                "day": dt.strftime("%a"),
                 "temperature": int(s_temps[i]) if i < len(s_temps) else 0,
                 "wind_speed": self._hourly_wind(s_wind[i] if i < len(s_wind) else None),
                 "wind_gust": self._hourly_wind(s_gust[i] if i < len(s_gust) else None),
-                "precipitation": (s_probs[i] / 100) if i < len(s_probs) else 0,
-                "rain": s_rain[i] if i < len(s_rain) else 0,
+                # Open-Meteo gives each hour's rain and chance of rain at the hour's end.
+                # Read them from the next time so each entry holds the hour it starts.
+                "precipitation": number(s_probs, i + 1) / 100,
+                "rain": number(s_rain, i + 1),
                 "uv_index": round(s_uv[i], 1) if i < len(s_uv) else 0,
                 "icon": self.get_plugin_dir(f"icons/{icon_name}.png"),
             })

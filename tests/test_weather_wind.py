@@ -121,7 +121,7 @@ class TestWindChartTemplate:
         settings.update(plugin_settings)
         return _plugin().env.get_template("agenda.html").render(
             plugin_settings=settings, units="metric", current_temperature="10",
-            hourly_forecast=self.HOURS if hours is None else hours,
+            hourly_chart=self.HOURS if hours is None else hours,
         )
 
     def test_wind_and_gust_values_reach_the_chart_script(self):

@@ -595,7 +595,7 @@
     <!-- ===== Hourly chart ===== -->
     <section class="ws-section">
         <h2 class="ws-section-title">Hourly chart</h2>
-        <p class="ws-section-hint">The next 24 hours of temperature and rain as a chart.</p>
+        <p class="ws-section-hint">Temperature and rain for the next one to three days as a chart.</p>
 
         <div class="ws-row">
             <div class="ws-row-text">
@@ -610,8 +610,22 @@
         <div class="ws-sub" id="hourlyOptions">
             <div class="ws-row">
                 <div class="ws-row-text">
+                    <label for="graphHours" class="ws-row-label">Time span</label>
+                    <span class="ws-row-hint">How far ahead the chart reaches. Its 24 rain bars cover 1, 2 or 3 hours each, with a time and weather icon every 2, 4 or 6 hours.</span>
+                </div>
+                <div class="ws-row-control">
+                    <select id="graphHours" name="graphHours" class="form-input">
+                        <option value="24" selected>24 hours</option>
+                        <option value="48">48 hours</option>
+                        <option value="72">72 hours</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="ws-row">
+                <div class="ws-row-text">
                     <label for="displayRain" class="ws-row-label">Rain amounts</label>
-                    <span class="ws-row-hint">Writes the amount on each hour's rain bar.</span>
+                    <span class="ws-row-hint">Writes the amount on each rain bar.</span>
                 </div>
                 <div class="ws-row-control">
                     <input type="checkbox" class="ws-switch" id="displayRain" data-setting="displayRain">
@@ -631,19 +645,9 @@
             <div class="ws-row">
                 <div class="ws-row-text">
                     <label for="displayGraphIcons" class="ws-row-label">Weather icons</label>
-                    <span class="ws-row-hint">A small weather icon under the chart at regular steps.</span>
+                    <span class="ws-row-hint">A small weather icon under the chart every 2, 4 or 6 hours, following the time span above.</span>
                 </div>
                 <div class="ws-row-control">
-                    <span class="ws-row-control" id="graphIconStepWrap">
-                        <label for="graphIconStep">every</label>
-                        <select id="graphIconStep" name="graphIconStep" class="form-input ws-inline-select">
-                            <option value="1">1 hour</option>
-                            <option value="2" selected>2 hours</option>
-                            <option value="4">4 hours</option>
-                            <option value="6">6 hours</option>
-                            <option value="12">12 hours</option>
-                        </select>
-                    </span>
                     <input type="checkbox" class="ws-switch" id="displayGraphIcons" data-setting="displayGraphIcons">
                 </div>
             </div>
@@ -826,7 +830,6 @@
 
         const isOn = id => document.getElementById(id).checked;
         document.getElementById('hourlyOptions').hidden = !isOn('displayGraph');
-        document.getElementById('graphIconStepWrap').classList.toggle('ws-dim', !isOn('displayGraphIcons'));
         document.getElementById('forecastDaysWrap').classList.toggle('ws-dim', !isOn('displayForecast'));
         document.getElementById('agendaChartWindRow').hidden = chosen('agendaForecastStyle') !== 'chart';
     }
@@ -939,7 +942,8 @@
             document.getElementById('units').value = units;
             document.getElementById('windUnit').value = ['m/s', 'km/h', 'mph'].includes(pluginSettings.windUnit)
                 ? pluginSettings.windUnit : defaultWindUnit(units, layout);
-            document.getElementById('graphIconStep').value = pluginSettings.graphIconStep || '2';
+            document.getElementById('graphHours').value = ['24', '48', '72'].includes(pluginSettings.graphHours)
+                ? pluginSettings.graphHours : '24';
             document.getElementById('forecastDays').value = pluginSettings.forecastDays || '7';
             document.getElementById('weatherTimeZone').value = pluginSettings.weatherTimeZone || 'locationTimeZone';
 

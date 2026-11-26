@@ -1,6 +1,7 @@
 import logging
 import math
 import time
+from collections import Counter
 from datetime import datetime, timedelta, timezone, date as date_type, time as time_type
 from urllib.parse import quote as url_quote
 
@@ -59,11 +60,38 @@ LAYOUT_TEMPLATES = {
 # Values of the "agendaForecastStyle" setting: what each agenda card shows beside its events.
 AGENDA_FORECAST_STYLE_CHART = "chart"      # one line of day stats over that day's chart
 AGENDA_FORECAST_STYLE_SUMMARY = "summary"  # three rows of stats and a large weather icon
+AGENDA_FORECAST_STYLE_TIMED = "timed"      # an outlook line, then rain, wind and UV with when they happen
 # Days shown in the agenda layout, starting today.
 AGENDA_DAYS = 4
 # First hour drawn in each agenda card's day chart. The chart ends at the midnight
-# that closes the day.
+# that closes the day. The timed box's outlook line describes the same hours.
 DAY_CHART_START_HOUR = 6
+
+# --- Timed forecast box ---
+# Rain in an hour, in display units, from which the hour counts as wet.
+WET_HOUR_RAIN = {"imperial": 0.004, "metric": 0.1, "standard": 0.1}
+# Chance of rain, in percent, from which a day with no wet hours is not called dry.
+DRY_DAY_MAX_CHANCE = 30
+# UV index from which the box gives the hours it lasts, and the name of each level.
+UV_WINDOW_FROM = 3
+UV_LEVELS = [(3, "low"), (6, "moderate"), (8, "high"), (11, "very high")]
+UV_LEVEL_TOP = "extreme"
+COMPASS_POINTS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+# Open-Meteo weather codes: the sky on dry hours, and the kind of rain or snow on wet ones.
+# A dry hour with any other code counts as cloudy.
+SKY_BY_CODE = {0: "clear", 1: "clear", 2: "partly", 3: "cloudy", 45: "fog", 48: "fog"}
+PRECIPITATION_BY_CODE = {
+    **dict.fromkeys((51, 53, 55, 56, 57), "drizzle"),
+    **dict.fromkeys((61, 63, 65, 66, 67), "rain"),
+    **dict.fromkeys((80, 81, 82), "showers"),
+    **dict.fromkeys((71, 73, 75, 77, 85, 86), "snow"),
+    **dict.fromkeys((95, 96, 99), "thunder"),
+}
+# How cloudy each sky is, to tell clearing from clouding over.
+SKY_CLOUDINESS = {"clear": 0, "partly": 1, "cloudy": 2}
+# Share of the outlook's hours one sky must hold for "all day", or a sky before and
+# after one change must hold between them.
+OUTLOOK_STEADY_SHARE = 0.8
 
 # ---------------------------------------------------------------------------
 # Hourly chart
@@ -361,14 +389,22 @@ class Weather(BasePlugin):
                 logger.warning(f"Calendar fetch failed: {str(e)}")
         template_params["agenda_events"] = agenda_events
 
-        # Each day's forecast, and its hourly chart unless the summary box is chosen.
+        # Each day's forecast, with its hourly chart or its timed details when that box is
+        # chosen. Either is None when the provider has no hourly data for the day, and the
+        # card shows the summary box instead.
         forecast_by_date = {f["date"]: f for f in template_params.get("forecast", []) if f.get("date")}
-        show_day_charts = settings.get("agendaForecastStyle", AGENDA_FORECAST_STYLE_CHART) != AGENDA_FORECAST_STYLE_SUMMARY
-        day_charts = template_params.get("day_charts", {}) if show_day_charts else {}
+        style = settings.get("agendaForecastStyle", AGENDA_FORECAST_STYLE_CHART)
+        day_charts = {}
+        day_details = {}
+        if style == AGENDA_FORECAST_STYLE_TIMED:
+            day_details = template_params.get("day_details", {})
+        elif style != AGENDA_FORECAST_STYLE_SUMMARY:
+            day_charts = template_params.get("day_charts", {})
         for day_group in agenda_events:
             day_group["forecast"] = forecast_by_date.get(day_group.get("date"))
-            # That day's hourly chart; None when the provider has no hourly data for it.
-            day_group["chart"] = day_charts.get(day_group.get("date")) if day_group["forecast"] else None
+            has_forecast = day_group["forecast"] is not None
+            day_group["chart"] = day_charts.get(day_group.get("date")) if has_forecast else None
+            day_group["details"] = day_details.get(day_group.get("date")) if has_forecast else None
         template_params["agenda_chart_wind"] = settings.get("agendaChartWind") == "true"
 
         template_params["agenda_wx_icons"] = {
@@ -808,6 +844,13 @@ class Weather(BasePlugin):
         return "↑"
 
     @staticmethod
+    def _compass_point(wind_deg):
+        """The compass point the wind blows from, such as "SW", or "" without a direction."""
+        if isinstance(wind_deg, bool) or not isinstance(wind_deg, (int, float)):
+            return ""
+        return COMPASS_POINTS[int((wind_deg % 360 + 22.5) // 45) % len(COMPASS_POINTS)]
+
+    @staticmethod
     def _hourly_wind(value, factor=1):
         """Round an hourly wind reading for the chart; None when the provider has none."""
         if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -915,6 +958,7 @@ class Weather(BasePlugin):
                 "uvi": round(day.get("uvi", 0)),
                 "wind_speed": wind_speed,
                 "wind_arrow": self._get_wind_arrow(day.get("wind_deg", 0)),
+                "wind_dir": self._compass_point(day.get("wind_deg")),
                 "wind_unit": wind_unit,
                 "moon_phase_pct": f"{illum * 100:.0f}",
                 "moon_phase_icon": self._get_moon_phase_icon_path(phase_name, lat),
@@ -1041,6 +1085,7 @@ class Weather(BasePlugin):
             daily.get("sunrise", []), daily.get("sunset", [])
         )
         data["day_charts"] = self._parse_open_meteo_day_charts(hourly_data, units)
+        data["day_details"] = self._parse_open_meteo_day_details(hourly_data, data["forecast"], units, time_format, tz)
         return data
 
     def _parse_open_meteo_forecast(self, daily_data, units, wind_unit, lat):
@@ -1096,6 +1141,7 @@ class Weather(BasePlugin):
                 # Already in the display unit, as requested from Open-Meteo.
                 "wind_speed": round(wind_speed) if isinstance(wind_speed, (int, float)) else wind_speed,
                 "wind_arrow": self._get_wind_arrow(wind_deg) if isinstance(wind_deg, (int, float)) else "",
+                "wind_dir": self._compass_point(wind_deg),
                 "wind_unit": wind_unit,
                 "moon_phase_pct": f"{illum_pct:.0f}",
                 "moon_phase_icon": self._get_moon_phase_icon_path(phase_name, lat),
@@ -1215,6 +1261,172 @@ class Weather(BasePlugin):
                 "gust": [self._hourly_wind(number("wind_gusts_10m", index)) for index in indices],
             }
         return charts
+
+    def _parse_open_meteo_day_details(self, hourly_data, forecast, units, time_format, tz):
+        """What the timed forecast box says about each day, keyed by ISO date.
+
+        Each day has an outlook line, and the details shown beside its rain chance, wind
+        speed and UV index. Days the hourly data does not cover from midnight to 11 PM
+        are left out, and their cards fall back to the summary box.
+        """
+        index_by_time = {}
+        for i, time_str in enumerate(hourly_data.get("time", [])):
+            try:
+                index_by_time[datetime.fromisoformat(time_str)] = i
+            except (TypeError, ValueError):
+                continue
+
+        def number(key, index):
+            values = hourly_data.get(key, [])
+            value = values[index] if index is not None and index < len(values) else None
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return None
+            return value
+
+        details = {}
+        for day in forecast:
+            day_date = date_type.fromisoformat(day["date"])
+            indices = [index_by_time.get(datetime.combine(day_date, time_type(hour))) for hour in range(24)]
+            if any(index is None for index in indices):
+                continue
+            codes = [number("weather_code", index) for index in indices]
+            # Open-Meteo gives each hour's rain at the hour's end: read it from the next time.
+            rain = [number("precipitation", index + 1) or 0 for index in indices]
+            uv = [number("uv_index", index) or 0 for index in indices]
+            gusts = [gust for gust in (number("wind_gusts_10m", index) for index in indices) if gust is not None]
+            wet_hours = [hour for hour in range(24) if rain[hour] >= WET_HOUR_RAIN[units]]
+            uv_hours = [hour for hour in range(24) if uv[hour] >= UV_WINDOW_FROM]
+            details[day["date"]] = {
+                "outlook": self._day_outlook(codes, wet_hours, time_format),
+                "rain": self._rain_detail(day, wet_hours, day_date, time_format, tz),
+                "wind": self._wind_detail(day, gusts),
+                "uv": self._uv_detail(day, uv_hours, day_date, time_format, tz),
+            }
+        return details
+
+    def _day_outlook(self, codes, wet_hours, time_format):
+        """One line on the day's weather from DAY_CHART_START_HOUR to midnight.
+
+        Rain or snow in those hours gives its kind and when, such as "Showers 2–6 PM".
+        A dry day gives its sky, and the one change in it that best explains the day,
+        such as "Fog until 10 AM, then sunny" or "Cloudy, clearing from 1 PM".
+        """
+        window = list(range(DAY_CHART_START_HOUR, 24))
+        wet = [hour for hour in wet_hours if hour in window]
+        if wet:
+            noun = self._precipitation_noun(
+                [codes[hour] for hour in wet] + [codes[hour + 1] for hour in wet if hour + 1 < 24]
+            )
+            first, end = wet[0], wet[-1] + 1
+            if len(wet) >= OUTLOOK_STEADY_SHARE * len(window):
+                return f"{noun} all day"
+            if end - first >= 10 and len(wet) < (end - first) / 2:
+                return f"{noun} on and off"
+            return f"{noun} {self._hour_span(first, end, time_format)}"
+
+        skies = [SKY_BY_CODE.get(codes[hour], "cloudy") for hour in window]
+        steady_sky, steady_hours = Counter(skies).most_common(1)[0]
+        # The single change that leaves the most hours matching their part's sky.
+        change = None
+        for split in range(2, len(skies) - 1):
+            before, before_hours = Counter(skies[:split]).most_common(1)[0]
+            after, after_hours = Counter(skies[split:]).most_common(1)[0]
+            if before != after and (change is None or before_hours + after_hours > change[0]):
+                change = (before_hours + after_hours, window[split], before, after)
+
+        needed = OUTLOOK_STEADY_SHARE * len(skies)
+        if steady_hours >= needed:
+            return f"{self._sky_word(steady_sky, window[0])} all day"
+        if change is None or change[0] < needed:
+            return self._mostly_sky(steady_sky, steady_hours, len(skies))
+
+        _, hour, before, after = change
+        when = self._clock_hour(hour, time_format)
+        if before == "fog":
+            return f"Fog until {when}, then {self._sky_word(after, hour).lower()}"
+        if after == "fog":
+            return f"{self._sky_word(before, window[0])}, fog from {when}"
+        if SKY_CLOUDINESS[after] < SKY_CLOUDINESS[before]:
+            return f"{self._sky_word(before, window[0])}, clearing from {when}"
+        return f"{self._sky_word(before, window[0])}, clouding over from {when}"
+
+    @staticmethod
+    def _sky_word(sky, from_hour):
+        """The sky as a word: a clear sky is sunny unless it only starts in the evening."""
+        if sky == "clear":
+            return "Clear" if from_hour >= 18 else "Sunny"
+        return {"partly": "Partly cloudy", "cloudy": "Cloudy", "fog": "Fog"}[sky]
+
+    def _mostly_sky(self, sky, sky_hours, hours):
+        """The outlook for a day whose sky keeps changing."""
+        if sky_hours * 2 < hours:
+            return "Mixed sun and cloud"
+        return {"clear": "Mostly sunny", "partly": "Partly cloudy",
+                "cloudy": "Mostly cloudy", "fog": "Fog at times"}[sky]
+
+    @staticmethod
+    def _precipitation_noun(codes):
+        """What falls, from the weather codes of the wet hours."""
+        kinds = {PRECIPITATION_BY_CODE.get(code) for code in codes} - {None}
+        if "thunder" in kinds:
+            return "Thunderstorms"
+        if "snow" in kinds:
+            return "Rain and snow" if kinds & {"rain", "showers", "drizzle"} else "Snow"
+        if "showers" in kinds:
+            return "Showers"
+        if "drizzle" in kinds and "rain" not in kinds:
+            return "Drizzle"
+        return "Rain"
+
+    @staticmethod
+    def _clock_hour(hour, time_format):
+        """An hour of the day for a sentence: "1 PM", "13:00", or midnight for 24."""
+        if hour % 24 == 0 and hour > 0:
+            return "midnight"
+        if time_format == "24h":
+            return f"{hour:02d}:00"
+        return f"{hour % 12 or 12} {'AM' if hour < 12 else 'PM'}"
+
+    def _hour_span(self, start, end, time_format):
+        """Hours start to end for a sentence: "2–6 PM", "11 AM–2 PM" or "14:00–18:00"."""
+        if time_format == "24h" or end == 24 or (start < 12) != (end < 12):
+            return f"{self._clock_hour(start, time_format)}–{self._clock_hour(end, time_format)}"
+        return f"{start % 12 or 12}–{end % 12 or 12} {'AM' if start < 12 else 'PM'}"
+
+    def _hour_range(self, start, end, day_date, time_format, tz):
+        """Hours start to end in short form: "2-6p", as event times are written, or "14–18"."""
+        if time_format == "24h":
+            return f"{start:02d}–{end:02d}"
+        start_dt = datetime.combine(day_date, time_type(start))
+        end_dt = datetime.combine(day_date, time_type(0)) + timedelta(hours=end)
+        return self._format_event_time_range(start_dt, end_dt.isoformat(), time_format, tz)
+
+    def _rain_detail(self, day, wet_hours, day_date, time_format, tz):
+        """The day's rain total and when it falls, or that it stays dry."""
+        if not wet_hours:
+            return "dry all day" if day.get("rain_pct", 0) < DRY_DAY_MAX_CHANCE else "little expected"
+        when = self._hour_range(wet_hours[0], wet_hours[-1] + 1, day_date, time_format, tz)
+        if day.get("rain_amount"):
+            return f"{day['rain_amount']} {day['rain_unit']} · {when}"
+        return when
+
+    @staticmethod
+    def _wind_detail(day, gusts):
+        """Where the wind blows from, and the day's strongest gust."""
+        parts = []
+        if day.get("wind_dir"):
+            parts.append(day["wind_dir"])
+        if gusts:
+            parts.append(f"gusts {round(max(gusts))}")
+        return " · ".join(parts)
+
+    def _uv_detail(self, day, uv_hours, day_date, time_format, tz):
+        """The UV level, and the hours it is at UV_WINDOW_FROM or above."""
+        uvi = day.get("uvi", 0)
+        level = next((name for below, name in UV_LEVELS if uvi < below), UV_LEVEL_TOP)
+        if not uv_hours:
+            return level
+        return f"{level} · {self._hour_range(uv_hours[0], uv_hours[-1] + 1, day_date, time_format, tz)}"
 
     def _parse_open_meteo_data_points(self, weather_data, aqi_data, units, wind_unit, tz, time_format):
         """Current conditions for the classic layout's metrics."""

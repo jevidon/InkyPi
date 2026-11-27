@@ -492,9 +492,10 @@
   flex-shrink: 0;
 }
 
+/* Solid text: on e-ink a translucent grey is dithered and breaks up. The detail
+   stands apart from its value by being smaller and not bold. */
 .wa-wx-timed-detail {
   font-size: min(1.25dvh, 1.05vw);
-  opacity: 0.7;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -558,10 +559,10 @@
   line-height: 120%;
 }
 
+/* Solid, like the timed box's details: smaller and not bold instead of grey. */
 .wa-wx-rain-amount {
   font-size: 0.85em;
   font-weight: normal;
-  opacity: 0.65;
   margin-left: 0.4vw;
 }
 

@@ -641,8 +641,8 @@ document.addEventListener("DOMContentLoaded", function () {
           type: 'line',
           label: 'Hourly Temperature',
           data: temperatures,
-          borderColor: 'rgba(241, 122, 36, 0.9)',
-          borderWidth: 2,
+          // The fill only: its line is drawn on top of the UV hump by the dataset after it.
+          borderWidth: 0,
           pointRadius: 0,
           fill: 'start', // Fill to the bottom of the plot area, not the y=0 origin
           clip: false,
@@ -667,10 +667,25 @@ document.addEventListener("DOMContentLoaded", function () {
           label: 'UV Index',
           data: uvIndex,
           yAxisID: 'y2',
+          // Above the temperature fill, so its colours match its height on warm days too.
+          order: -0.5,
           borderWidth: 0,
           pointRadius: 0,
           fill: true,
           tension: 0.4,
+        },
+        {
+          // The temperature line, over the UV hump and under the wind lines.
+          type: 'line',
+          label: 'Hourly Temperature Line',
+          data: temperatures,
+          order: -0.75,
+          borderColor: 'rgba(241, 122, 36, 0.9)',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+          clip: false,
+          tension: 0.5
         },
         ...windDatasets
       ]

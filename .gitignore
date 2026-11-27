@@ -172,3 +172,6 @@ mock_display_output/
 # Static Files added by install/update_vendors.sh
 /src/static/scripts/
 /src/static/styles/
+
+# Runtime Open-Meteo responses (include the configured coordinates)
+/src/config/open_meteo_cache.json*

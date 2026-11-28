@@ -279,11 +279,12 @@
 
   <!-- ===== CHART: Full-width, under both columns ===== -->
   {% if plugin_settings.displayGraph == "true" %}
-  <!-- The chart runs down to the screen's bottom margin: it takes the page's bottom padding
-       (1.5vw) as well, so the gap under it is exactly the "Bottom" margin in the settings. -->
+  <!-- The chart runs down almost to the screen's bottom margin: it takes all but 2px of the
+       page's bottom padding (1.5vw), so the gap under it is the "Bottom" margin in the settings
+       plus that 2px. On the panel, nothing less read cleanly at the edge. -->
   <style>
-    body { padding-bottom: 0 !important; }
-    .wa-chart-container { height: calc(31dvh + 1.5vw); }
+    body { padding-bottom: 2px !important; }
+    .wa-chart-container { height: calc(31dvh + 1.5vw - 2px); }
   </style>
   <div class="wa-chart-container">
     <canvas id="hourlyTemperatureChart"></canvas>

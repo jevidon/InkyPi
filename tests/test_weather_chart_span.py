@@ -84,8 +84,7 @@ class TestChartPoints:
     def test_one_hour_steps_keep_each_hour_as_it_is(self):
         points = Weather._chart_points(_hours(HOURLY_FORECAST_HOURS), 1)
 
-        # Each point also carries the highest UV of its hours: here, its own.
-        assert points == [{**hour, "uv_index_max": hour["uv_index"]} for hour in _hours(CHART_BARS + 1)]
+        assert points == _hours(CHART_BARS + 1)
 
     @pytest.mark.parametrize("hours", CHART_HOURS_CHOICES)
     def test_each_span_has_24_bars_and_a_point_that_closes_it(self, hours):

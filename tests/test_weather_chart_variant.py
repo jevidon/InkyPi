@@ -1,4 +1,4 @@
-"""The agenda's hourly chart variant: hours before now, hazard flags and the fields they need."""
+"""The agenda's hourly chart variant: hazard flags and the fields they need."""
 import os
 import sys
 from datetime import datetime, timedelta
@@ -12,11 +12,7 @@ import pytz
 ROOT = os.path.dirname(os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
-from plugins.weather.weather import (  # noqa: E402
-    CHART_PAST_HOURS,
-    OPEN_METEO_FORECAST_URL,
-    Weather,
-)
+from plugins.weather.weather import OPEN_METEO_FORECAST_URL, Weather  # noqa: E402
 
 TZ = pytz.timezone("America/New_York")
 
@@ -40,11 +36,11 @@ def _open_meteo_hourly(count, start="2026-11-26T00:00", **series):
     return hourly
 
 
-def _hours(hourly, now_index, units="metric"):
-    """(past, future) entries with `now_index` as the current hour."""
+def _hours(hourly):
+    """The parsed hours, with the first hour of `hourly` as the current one."""
     plugin = _plugin()
-    with patch.object(plugin, "_open_meteo_hourly_start_index", return_value=now_index):
-        return plugin._parse_open_meteo_hours(hourly, units, TZ, "12h", [], [])
+    with patch.object(plugin, "_open_meteo_hourly_start_index", return_value=0):
+        return plugin._parse_open_meteo_hourly(hourly, "metric", TZ, "12h", [], [])
 
 
 def _hour(**readings):
@@ -62,107 +58,29 @@ class TestRequest:
         assert "apparent_temperature" in hourly_fields
         assert "cape" in hourly_fields
 
-    def test_asks_for_yesterdays_hours(self):
-        assert "&past_days=1" in OPEN_METEO_FORECAST_URL
 
-
-class TestDropPastDays:
-
-    def test_daily_rows_start_at_today_and_hourly_rows_stay(self):
-        weather = {
-            "current": {"time": "2026-11-27T22:45"},
-            "daily": {"time": ["2026-11-26", "2026-11-27", "2026-11-28"], "sunrise": ["a", "b", "c"]},
-            "hourly": {"time": ["2026-11-26T00:00", "2026-11-27T00:00"]},
-        }
-
-        Weather._drop_past_days(weather)
-
-        assert weather["daily"] == {"time": ["2026-11-27", "2026-11-28"], "sunrise": ["b", "c"]}
-        assert weather["hourly"]["time"] == ["2026-11-26T00:00", "2026-11-27T00:00"]
-
-    def test_days_that_already_start_today_are_left_alone(self):
-        weather = {"current": {"time": "2026-11-27T22:45"}, "daily": {"time": ["2026-11-27", "2026-11-28"]}}
-
-        Weather._drop_past_days(weather)
-
-        assert weather["daily"]["time"] == ["2026-11-27", "2026-11-28"]
-
-    @pytest.mark.parametrize("weather", [
-        {},
-        {"daily": {"time": ["2026-11-26"]}},
-        {"current": {"time": "2026-11-27T22:45"}},
-        # Every day is in the past: an odd reply, kept as it came.
-        {"current": {"time": "2026-11-27T22:45"}, "daily": {"time": ["2026-11-25", "2026-11-26"]}},
-    ])
-    def test_replies_without_a_clear_today_are_left_alone(self, weather):
-        before = {key: dict(value) for key, value in weather.items()}
-
-        assert Weather._drop_past_days(weather) == before
-
-
-class TestHoursEitherSideOfNow:
-
-    def test_the_past_is_the_hours_just_before_now_oldest_first(self):
-        past, future = _hours(_open_meteo_hourly(60), now_index=30)
-
-        assert [h["temperature"] for h in past] == list(range(30 - CHART_PAST_HOURS, 30))
-        assert future[0]["temperature"] == 30
-
-    def test_the_past_is_shorter_when_the_data_starts_later(self):
-        past, future = _hours(_open_meteo_hourly(60), now_index=2)
-
-        assert [h["temperature"] for h in past] == [0, 1]
-        assert future[0]["temperature"] == 2
-
-    def test_hourly_forecast_is_still_the_hours_from_now_on(self):
-        plugin = _plugin()
-        with patch.object(plugin, "_open_meteo_hourly_start_index", return_value=30):
-            hourly = plugin._parse_open_meteo_hourly(_open_meteo_hourly(60), "metric", TZ, "12h", [], [])
-
-        assert [h["temperature"] for h in hourly] == list(range(30, 60))
+class TestHourlyFlagReadings:
 
     def test_feels_like_is_rounded_and_absent_without_a_reading(self):
-        _, future = _hours(_open_meteo_hourly(3, apparent_temperature=[1.6, None, 3.4]), now_index=0)
+        hourly = _hours(_open_meteo_hourly(3, apparent_temperature=[1.6, None, 3.4]))
 
-        assert [h["feels_like"] for h in future] == [2, None, 3]
+        assert [h["feels_like"] for h in hourly] == [2, None, 3]
 
     def test_a_thunder_code_is_a_storm(self):
-        _, future = _hours(_open_meteo_hourly(3, weather_code=[0, 95, 3]), now_index=0)
+        hourly = _hours(_open_meteo_hourly(3, weather_code=[0, 95, 3]))
 
-        assert [h["storm"] for h in future] == [False, True, False]
+        assert [h["storm"] for h in hourly] == [False, True, False]
 
     def test_high_cape_is_a_storm_only_with_a_real_chance_of_rain(self):
         # The chance of rain for an hour is reported at the hour's end.
-        hourly = _open_meteo_hourly(4, cape=[1500, 1500, 400, 0], precipitation_probability=[0, 10, 60, 60])
-        _, future = _hours(hourly, now_index=0)
+        hourly = _hours(_open_meteo_hourly(4, cape=[1500, 1500, 400, 0], precipitation_probability=[0, 10, 60, 60]))
 
-        assert [h["storm"] for h in future][:3] == [False, True, False]
+        assert [h["storm"] for h in hourly][:3] == [False, True, False]
 
     def test_fog_codes_are_fog(self):
-        _, future = _hours(_open_meteo_hourly(3, weather_code=[45, 48, 3]), now_index=0)
+        hourly = _hours(_open_meteo_hourly(3, weather_code=[45, 48, 3]))
 
-        assert [h["fog"] for h in future] == [True, True, False]
-
-
-class TestPastChartPoints:
-
-    @pytest.mark.parametrize("step, temperatures", [(1, [0, 1, 2, 3, 4, 5]), (2, [0, 2, 4]), (3, [0, 3])])
-    def test_six_hours_make_whole_steps_that_end_at_now(self, step, temperatures):
-        past = [{"temperature": h, "rain": 0.1, "precipitation": 0, "uv_index": 0} for h in range(6)]
-
-        points = Weather._chart_past_points(past, step)
-
-        assert [p["temperature"] for p in points] == temperatures
-        assert [p["rain"] for p in points] == [round(0.1 * step, 2)] * len(temperatures)
-
-    def test_a_short_past_keeps_its_latest_whole_steps(self):
-        past = [{"temperature": h, "rain": 0, "precipitation": 0, "uv_index": 0} for h in range(5)]
-
-        assert [p["temperature"] for p in Weather._chart_past_points(past, 2)] == [1, 3]
-
-    @pytest.mark.parametrize("past", [[], [{"temperature": 1, "rain": 0, "precipitation": 0, "uv_index": 0}]])
-    def test_less_than_one_step_of_past_draws_none(self, past):
-        assert Weather._chart_past_points(past, 2) == []
+        assert [h["fog"] for h in hourly] == [True, True, False]
 
 
 class TestChartFlags:
@@ -275,15 +193,11 @@ def _template_params(now_index, **settings):
 
 class TestChartParams:
 
+    @pytest.mark.parametrize("graph_hours, step", [("24", 1), ("48", 2), ("72", 3)])
+    def test_the_chart_gets_the_hours_between_its_points(self, graph_hours, step):
+        assert _template_params(40, graphHours=graph_hours)["chart_step"] == step
+
     # Hour 40 is "now": each temperature is its hour's index, so every hour ahead is above freezing.
-    @pytest.mark.parametrize("graph_hours, step, past", [("24", 1, [34, 35, 36, 37, 38, 39]), ("48", 2, [34, 36, 38]), ("72", 3, [34, 37])])
-    def test_the_chart_gets_the_hours_before_now_in_its_own_steps(self, graph_hours, step, past):
-        params = _template_params(40, graphHours=graph_hours)
-
-        assert params["chart_step"] == step
-        assert [p["temperature"] for p in params["chart_past"]] == past
-        assert params["hourly_chart"][0]["temperature"] == 40
-
     def test_the_chart_gets_the_hazards_over_its_span(self):
         params = _template_params(40)
 

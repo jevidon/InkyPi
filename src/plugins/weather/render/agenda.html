@@ -462,28 +462,24 @@ document.addEventListener("DOMContentLoaded", function () {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
 
-  // One point every 1, 2 or 3 hours. The points before now come first, then the chosen span.
-  // Each point's rain bar runs to the next point, so there is one bar fewer than points and the
-  // last point only closes the line.
-  {% set chart_points = (chart_past or []) + hourly_chart %}
-  const nowIndex      = {{ (chart_past or []) | length }};
-  const labels        = [{% for h in chart_points %}"{{ h.time }}"{% if not loop.last %}, {% endif %}{% endfor %}];
-  const days          = [{% for h in chart_points %}"{{ h.day }}"{% if not loop.last %}, {% endif %}{% endfor %}];
-  const temperatures  = [{% for h in chart_points %}{{ h.temperature }}{% if not loop.last %}, {% endif %}{% endfor %}];
-  const rain          = [{% for h in chart_points[:-1] %}{{ h.rain or 0 }}{% if not loop.last %}, {% endif %}{% endfor %}];
-  const uvIndex       = [{% for h in chart_points %}{{ h.uv_index or 0 }}{% if not loop.last %}, {% endif %}{% endfor %}];
-  const uvSlotMax     = [{% for h in chart_points %}{{ h.uv_index_max or 0 }}{% if not loop.last %}, {% endif %}{% endfor %}];
-  const windRaw       = [{% for h in chart_points %}{{ h.wind_speed if h.wind_speed is number else 'null' }}{% if not loop.last %}, {% endif %}{% endfor %}];
-  const gustRaw       = [{% for h in chart_points %}{{ h.wind_gust if h.wind_gust is number else 'null' }}{% if not loop.last %}, {% endif %}{% endfor %}];
-  const iconPaths     = [{% for h in chart_points %}"{{ h.icon | replace('\\', '/') }}"{% if not loop.last %}, {% endif %}{% endfor %}];
+  // One point every 1, 2 or 3 hours across the chosen span. Each point's rain bar runs to the
+  // next point, so there is one bar fewer than points and the last point only closes the line.
+  const labels        = [{% for h in hourly_chart %}"{{ h.time }}"{% if not loop.last %}, {% endif %}{% endfor %}];
+  const days          = [{% for h in hourly_chart %}"{{ h.day }}"{% if not loop.last %}, {% endif %}{% endfor %}];
+  const temperatures  = [{% for h in hourly_chart %}{{ h.temperature }}{% if not loop.last %}, {% endif %}{% endfor %}];
+  const rain          = [{% for h in hourly_chart[:-1] %}{{ h.rain or 0 }}{% if not loop.last %}, {% endif %}{% endfor %}];
+  const uvIndex       = [{% for h in hourly_chart %}{{ h.uv_index or 0 }}{% if not loop.last %}, {% endif %}{% endfor %}];
+  const windRaw       = [{% for h in hourly_chart %}{{ h.wind_speed if h.wind_speed is number else 'null' }}{% if not loop.last %}, {% endif %}{% endfor %}];
+  const gustRaw       = [{% for h in hourly_chart %}{{ h.wind_gust if h.wind_gust is number else 'null' }}{% if not loop.last %}, {% endif %}{% endfor %}];
+  const iconPaths     = [{% for h in hourly_chart %}"{{ h.icon | replace('\\', '/') }}"{% if not loop.last %}, {% endif %}{% endfor %}];
   // Hazards over the span: {kind, label, start, end}, in hours from now.
   const flags         = {{ (chart_flags or []) | tojson }};
   const stepHours     = {{ chart_step or 1 }};
   const last          = labels.length - 1;
-  if (last - nowIndex < 1) return;
-  // Times and weather icons go under every other point, counted from now, but not the two ends,
-  // where they would be cut off. That is every 2, 4 or 6 hours.
-  const isMarked      = i => i > 0 && i < last && Math.abs(i - nowIndex) % 2 === 0;
+  if (last < 1) return;
+  // Times and weather icons go under every other point, but not the two ends, where they would
+  // be cut off. That is every 2, 4 or 6 hours.
+  const isMarked      = i => i > 0 && i < last && i % 2 === 0;
   const units         = document.getElementById('units-container').dataset.units;
   const isImperial    = units === "imperial";
   const rainUnit      = isImperial ? "in" : "mm";
@@ -495,10 +491,8 @@ document.addEventListener("DOMContentLoaded", function () {
   const showRain      = {{ 'true' if plugin_settings.displayRain == "true" else 'false' }};
   const isNum         = v => typeof v === 'number';
 
-  // Room around the plot. The UV ribbon sits between the plot's floor and the time labels, each
-  // row of hazard flags sits above the plot, and the temperature line keeps clear of the plot's
-  // top and bottom so its highs and lows can be written beside it.
-  const RIBBON_H = 16, RIBBON_GAP = 6, RIBBON_ROOM = RIBBON_H + RIBBON_GAP;
+  // Room around the plot. Each row of hazard flags sits above it, and the temperature line keeps
+  // clear of its top and bottom so its highs and lows can be written beside it.
   const FLAG_ROW = 23, FLAG_ROWS_MAX = 3;
   const TOP_ROOM = 32, BOTTOM_ROOM = 26;
   const flagsHeight = rows => rows ? rows * FLAG_ROW + 4 : 0;
@@ -549,27 +543,19 @@ document.addEventListener("DOMContentLoaded", function () {
   const tempColor = 'rgb(241, 122, 36)';
   const rainColor = 'rgb(26, 111, 176)';
 
-  // UV index colour and the text colour that reads on it.
-  function uvColor(uv) {
-    if (uv >= 11) return ['#a855f7', '#ffffff'];
-    if (uv >= 8)  return ['#ef4444', '#ffffff'];
-    if (uv >= 6)  return ['#f97316', '#000000'];
-    if (uv >= 3)  return ['#eab308', '#000000'];
-    return ['#22c55e', '#000000'];
-  }
   const flagColor = { storm: '#c62828', heat: '#c62828', gust: ink, freezing: rainColor, fog: withAlpha(ink, 0.55) };
 
   // Rain keeps to the lower 60% of the plot, clear of the temperature labels.
   const rainMax = Math.max(0, ...rain);
   const y1Max   = Math.max(rainMax, isImperial ? 0.1 : 2.5);
 
-  // Runs of true values: [first, last] index pairs. A run never crosses `splitAt`.
-  function runs(count, test, splitAt) {
+  // Runs of true values: [first, last] index pairs.
+  function runs(count, test) {
     const out = [];
     let start = -1;
     for (let i = 0; i <= count; i++) {
       const on = i < count && test(i);
-      if (start >= 0 && (!on || i === splitAt)) { out.push([start, i - 1]); start = -1; }
+      if (start >= 0 && !on) { out.push([start, i - 1]); start = -1; }
       if (on && start < 0) start = i;
     }
     return out;
@@ -603,15 +589,15 @@ document.addEventListener("DOMContentLoaded", function () {
   let flagLayout = null;
   function layoutFlags(chart) {
     const points = chart.getDatasetMeta(0).data;
-    const slot = points[1].x - points[0].x, xNow = points[nowIndex].x, xEnd = points[last].x;
+    const slot = points[1].x - points[0].x, xStart = points[0].x, xEnd = points[last].x;
     const rowEnds = [], placed = [];
     ctx.save();
     ctx.font = '600 13px Jost';
     flags.forEach(flag => {
-      const x0 = xNow + flag.start / stepHours * slot;
-      const x1 = Math.min(xNow + flag.end / stepHours * slot, xEnd);
+      const x0 = xStart + flag.start / stepHours * slot;
+      const x1 = Math.min(xStart + flag.end / stepHours * slot, xEnd);
       const width = ctx.measureText(flag.label).width;
-      const textX = Math.max(Math.min(x0, xEnd - width), xNow);
+      const textX = Math.max(Math.min(x0, xEnd - width), xStart);
       let row = 0;
       while (rowEnds[row] !== undefined && rowEnds[row] > textX) row++;
       if (row >= FLAG_ROWS_MAX) return;
@@ -627,9 +613,9 @@ document.addEventListener("DOMContentLoaded", function () {
     afterDatasetsDraw(chart) {
       const { ctx, chartArea: area } = chart;
       const points = chart.getDatasetMeta(0).data;
-      const xs = points.map(p => p.x), slot = xs[1] - xs[0], xNow = xs[nowIndex];
+      const xs = points.map(p => p.x);
       const yTemp = v => chart.scales.y.getPixelForValue(v);
-      const xLow = nowIndex > 0 ? xNow + 8 : area.left + 2;
+      const xLow = area.left + 2;
       const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
       // Boxes of labels already on the plot, so later labels can step around them.
       const boxes = [];
@@ -661,63 +647,27 @@ document.addEventListener("DOMContentLoaded", function () {
       ctx.save();
       ctx.setLineDash([]);
 
-      // Rain: one total per wet spell, over its tallest bar. A spell does not cross "now".
+      // Rain: one total per wet spell, over its tallest bar.
       if (showRain) {
         const bars = chart.getDatasetMeta(1).data;
-        runs(rain.length, i => rain[i] > threshold, nowIndex).forEach(([first, lastBar]) => {
+        runs(rain.length, i => rain[i] > threshold).forEach(([first, lastBar]) => {
           const peak = indexOfMax(rain, first, lastBar);
           const total = rain.slice(first, lastBar + 1).reduce((sum, r) => sum + r, 0);
           const label = `${total.toFixed(2)} ${rainUnit}`;
           ctx.font = '600 17px Jost';
           const half = ctx.measureText(label).width / 2 + 4;
-          const lo = first >= nowIndex ? xLow + half : area.left + half;
-          const hi = first >= nowIndex ? area.right - half : Math.max(xNow - half, lo);
-          const x = clamp(bars[peak].x, lo, hi), y = Math.max(bars[peak].y - 8, area.top + 18);
-          if (first >= nowIndex) boxes.push([x - half, y - 17, x + half, y + 4]);
+          const x = clamp(bars[peak].x, xLow + half, area.right - half), y = Math.max(bars[peak].y - 8, area.top + 18);
+          boxes.push([x - half, y - 17, x + half, y + 4]);
           text(label, x, y, { size: 17, weight: 600, align: 'center', halo: true });
         });
       }
 
-      // UV ribbon under the plot's floor. From 3, where sun protection starts, a cell is filled
-      // and each run's peak is numbered; below 3 it is a thin line.
-      const ribbonTop = area.bottom + RIBBON_GAP;
-      ctx.fillStyle = withAlpha(ink, 0.18);
-      ctx.fillRect(area.left, ribbonTop + RIBBON_H - 1, area.right - area.left, 1);
-      const slotUv = rain.map((_, j) => Math.round(Math.max(uvSlotMax[j], uvIndex[j + 1])));
-      slotUv.forEach((uv, j) => {
-        if (uv < 1) return;
-        const height = uv >= 3 ? RIBBON_H : 4;
-        ctx.fillStyle = uvColor(uv)[0];
-        ctx.fillRect(xs[j] + 0.5, ribbonTop + RIBBON_H - height, slot - 1, height);
-      });
-      runs(slotUv.length, j => slotUv[j] >= 1, nowIndex).forEach(([first, lastSlot]) => {
-        const peak = indexOfMax(slotUv, first, lastSlot);
-        if (slotUv[peak] < 3) return;
-        text(String(slotUv[peak]), xs[peak] + slot / 2, ribbonTop + RIBBON_H / 2 + 1,
-          { size: 13, weight: 700, align: 'center', base: 'middle', color: uvColor(slotUv[peak])[1] });
-      });
-      text('UV', area.left - 10, ribbonTop + RIBBON_H / 2 + 1,
-        { size: 13, weight: 600, align: 'right', base: 'middle', color: withAlpha(ink, 0.67) });
-
-      // The hours before now, faded, left of a "now" line.
-      if (nowIndex > 0) {
-        ctx.fillStyle = withAlpha(paper, 0.62);
-        ctx.fillRect(area.left, area.top, xNow - area.left, ribbonTop + RIBBON_H - area.top);
-        ctx.strokeStyle = ink;
-        ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(xNow, area.top); ctx.lineTo(xNow, area.bottom); ctx.stroke();
-        text('now', xNow + 6, area.top + 15, { size: 14, weight: 600 });
-        text('earlier', xNow - 6, area.top + 15, { size: 14, align: 'right', color: withAlpha(ink, 0.55) });
-        boxes.push([xNow - 2, area.top, xNow + 42, area.top + 20]);
-      }
-
-      // Highs and lows of the hours ahead, written where they happen. A high goes above its
+      // Highs and lows, written where they happen. A high goes above its
       // point and a low below; failing that, beside the point, then the other side of the line.
-      const ahead = temperatures.slice(nowIndex);
       const reach = Math.max(2, Math.round(6 / stepHours));
       const prominence = Math.max(isImperial ? 3 : 2, 0.15 * (maxTemp - minTemp));
-      const highs = turningPoints(ahead, reach, prominence, 1).map(i => i + nowIndex);
-      const lows  = turningPoints(ahead, reach, prominence, -1).map(i => i + nowIndex);
+      const highs = turningPoints(temperatures, reach, prominence, 1);
+      const lows  = turningPoints(temperatures, reach, prominence, -1);
       const tempSpots = (i, above) => width => {
         const px = xs[i], py = yTemp(temperatures[i]);
         const cx = clamp(px, xLow + width / 2, area.right - width / 2);
@@ -735,14 +685,25 @@ document.addEventListener("DOMContentLoaded", function () {
       // otherwise a point or more to either side.
       if (showWind) {
         let peak = -1;
-        for (let i = nowIndex; i <= last; i++) if (isNum(peakLine[i]) && (peak < 0 || peakLine[i] > peakLine[peak])) peak = i;
+        for (let i = 0; i <= last; i++) if (isNum(peakLine[i]) && (peak < 0 || peakLine[i] > peakLine[peak])) peak = i;
         if (peak >= 0) {
           const yWind = v => chart.scales.yw.getPixelForValue(v);
           place(`${hasGust ? 'gust' : 'wind'} ${peakLine[peak]} ${windUnit}`, { size: 15, weight: 600, color: withAlpha(ink, 0.75) },
-            width => [0, -1, 1, -2, 2, -3, 3, -4, 4].map(k => peak + k).filter(i => i >= nowIndex && i <= last && isNum(peakLine[i]))
+            width => [0, -1, 1, -2, 2, -3, 3, -4, 4].map(k => peak + k).filter(i => i >= 0 && i <= last && isNum(peakLine[i]))
               .map(i => ({ x: clamp(xs[i], xLow + width / 2, area.right - width / 2), y: Math.max(yWind(peakLine[i]) - 9, area.top + 16), align: 'center' })));
         }
       }
+
+      // Each UV peak of 3 or more, where sun protection starts, is numbered over the hump.
+      const yUv = v => chart.scales.y2.getPixelForValue(Math.min(v, 11));
+      runs(uvIndex.length, i => Math.round(uvIndex[i]) >= 1).forEach(([first, lastPoint]) => {
+        const peak = indexOfMax(uvIndex, first, lastPoint);
+        if (Math.round(uvIndex[peak]) < 3) return;
+        place(`UV ${Math.round(uvIndex[peak])}`, { size: 15, weight: 600, color: withAlpha(ink, 0.85) }, width => {
+          const x = clamp(xs[peak], xLow + width / 2, area.right - width / 2), y = Math.max(yUv(uvIndex[peak]) - 6, area.top + 16);
+          return [{ x, y, align: 'center' }, { x: x + width + 14, y: y + 14, align: 'center' }, { x: x - width - 14, y: y + 14, align: 'center' }];
+        });
+      });
 
       // Hazard flags above the plot: a bar over the hours each covers, named at its start.
       if (flagLayout) {
@@ -770,7 +731,7 @@ document.addEventListener("DOMContentLoaded", function () {
           const img = new Image();
           img.src = iconPaths[i];
           const xPos = point.x - (iconSize / 2);
-          const yPos = bottom + RIBBON_ROOM + 25;
+          const yPos = bottom + 25;
           if (img.complete) ctx.drawImage(img, xPos, yPos, iconSize, iconSize);
           else img.onload = () => ctx.drawImage(img, xPos, yPos, iconSize, iconSize);
         });
@@ -788,7 +749,7 @@ document.addEventListener("DOMContentLoaded", function () {
           type: 'line',
           label: 'Hourly Temperature',
           data: temperatures,
-          // The fill only: its line is the dataset after the rain bars, drawn on top of them.
+          // The fill only: its line is drawn on top of the UV hump by the dataset after it.
           borderWidth: 0,
           pointRadius: 0,
           fill: 'start', // Fill to the bottom of the plot area, not the y=0 origin
@@ -809,7 +770,19 @@ document.addEventListener("DOMContentLoaded", function () {
           fill: true,
         },
         {
-          // The temperature line, over its fill and the rain bars and under the wind lines.
+          type: 'line',
+          label: 'UV Index',
+          data: uvIndex,
+          yAxisID: 'y2',
+          // Above the temperature fill, so its colours match its height on warm days too.
+          order: -0.5,
+          borderWidth: 0,
+          pointRadius: 0,
+          fill: true,
+          tension: 0.4,
+        },
+        {
+          // The temperature line, over the UV hump and under the wind lines.
           type: 'line',
           label: 'Hourly Temperature Line',
           data: temperatures,
@@ -826,8 +799,8 @@ document.addEventListener("DOMContentLoaded", function () {
     options: {
       layout: {
         padding: {
-          // The left gutter holds the UV ribbon's name. Flags, when there are any, start with one row.
-          left: 44,
+          // Flags, when there are any, start with one row.
+          left: 16,
           right: 16,
           top: 12 + flagsHeight(flags.length ? 1 : 0),
           bottom: showIcons ? 18 : 0
@@ -839,10 +812,9 @@ document.addEventListener("DOMContentLoaded", function () {
       scales: {
         x: {
           ticks: {
-            autoSkip: false, padding: 10 + RIBBON_ROOM,
+            autoSkip: false, padding: 10,
             maxRotation: 0, minRotation: 0,
-            // Times before now recede with the rest of the past.
-            color: context => context.index < nowIndex ? withAlpha(ink, 0.5) : ink,
+            color: ink,
             font: { family: 'Jost', size: 14 },
             callback: function(value, index) {
               if (!isMarked(index)) return '';
@@ -875,6 +847,11 @@ document.addEventListener("DOMContentLoaded", function () {
           grid: { display: false },
           min: 0,
           max: y1Max / 0.6,
+        },
+        y2: {
+          display: false,
+          min: 0,
+          max: 11,
         },
         ...(!showWind ? {} : {
           // Hidden scale for the wind lines; it takes no room, so the plot keeps its full width.
@@ -922,6 +899,17 @@ document.addEventListener("DOMContentLoaded", function () {
   precipGradient.addColorStop(0, 'rgba(26, 111, 176, 0.8)');
   precipGradient.addColorStop(1, 'rgba(194, 223, 246, 0.15)');
   chart.data.datasets[1].backgroundColor = precipGradient;
+
+  const uvTop    = chart.scales['y2'].getPixelForValue(11);
+  const uvBottom = chart.scales['y2'].getPixelForValue(0);
+  const uvGradient = ctx.createLinearGradient(0, uvTop, 0, uvBottom);
+  uvGradient.addColorStop(0,      'rgba(168,  85, 247, 0.8)');  // 11 — Extreme (purple)
+  uvGradient.addColorStop(3/11,   'rgba(239,  68,  68, 0.8)');  //  8 — Very High (red)
+  uvGradient.addColorStop(5/11,   'rgba(249, 115,  22, 0.8)');  //  6 — High (orange)
+  uvGradient.addColorStop(8/11,   'rgba(234, 179,   8, 0.8)');  //  3 — Moderate (yellow)
+  uvGradient.addColorStop(9/11,   'rgba( 34, 197,  94, 0.8)');  //  2 — Low (green)
+  uvGradient.addColorStop(1,      'rgba( 34, 197,  94, 0)');    //  0 — transparent
+  chart.data.datasets[2].backgroundColor = uvGradient;
 
   chart.update();
   {% endif %}

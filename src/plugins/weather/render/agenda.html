@@ -580,8 +580,18 @@ document.addEventListener("DOMContentLoaded", function () {
   const tempColor = 'rgb(241, 122, 36)';
   const rainColor = 'rgb(26, 111, 176)';
 
-  // Solid colours only: on the panel a tint is dithered into dots, which small text does not survive.
-  const flagColor = { storm: '#c62828', heat: '#c62828', gust: ink, freezing: rainColor, fog: ink };
+  // Each flag's block colour and the colour of its name. Storms, heat and freezing are solid blocks
+  // with white names. Gusts and fog are quieter: a light grey block with the name in the text
+  // colour. Names stay solid: on the panel a tint is dithered into dots, which small text does
+  // not survive.
+  const FLAG_GREY = '#d4d4d4';
+  const flagStyle = {
+    storm:    { fill: '#c62828', name: paper },
+    heat:     { fill: '#c62828', name: paper },
+    freezing: { fill: rainColor, name: paper },
+    gust:     { fill: FLAG_GREY, name: ink },
+    fog:      { fill: FLAG_GREY, name: ink },
+  };
 
   // Rain keeps to the lower 60% of the plot, clear of the temperature labels.
   const rainMax = Math.max(0, ...rain);
@@ -769,11 +779,15 @@ document.addEventListener("DOMContentLoaded", function () {
       // each covers.
       if (flagLayout) {
         flagLayout.placed.forEach(flag => {
-          const y = area.bottom + FLAG_TOP + flag.row * (FLAG_H + FLAG_GAP), color = flagColor[flag.kind] || ink;
-          ctx.fillStyle = color;
+          const y = area.bottom + FLAG_TOP + flag.row * (FLAG_H + FLAG_GAP);
+          const style = flagStyle[flag.kind] || { fill: FLAG_GREY, name: ink };
+          ctx.fillStyle = style.fill;
           ctx.fillRect(flag.x0, y, flag.x1 - flag.x0, FLAG_H);
+          // A name beside its block is on the page, so it takes the block's colour, or the text
+          // colour when the block is grey.
+          const beside = style.fill === FLAG_GREY ? ink : style.fill;
           text(flag.label, flag.textX, y + FLAG_H / 2 + 1,
-            { size: FLAG_TEXT, weight: 600, base: 'middle', color: flag.inside ? paper : color });
+            { size: FLAG_TEXT, weight: 600, base: 'middle', color: flag.inside ? style.name : beside });
         });
       }
       ctx.restore();

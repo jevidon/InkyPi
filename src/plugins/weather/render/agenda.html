@@ -84,6 +84,18 @@
     .wa-chart-container  { background: rgba(0,100,0,0.08); outline: 2px dashed green; position: relative; }
     .wa-chart-container::before { content: "wa-chart-container"; background: green; color: #fff; top: 0; left: 0; }
 
+    /* Bottom-edge ruler: a strip over the bottom of the screen with a bar at each distance from the edge */
+    .wa-edge-ruler {
+      position: fixed; left: 0; right: 0; bottom: 0; height: 64px; z-index: 500;
+      display: flex; justify-content: space-evenly;
+      background: #fff; border-top: 2px solid #000;
+      font: bold 20px monospace; color: #000;
+    }
+    .wa-edge-ruler span { position: relative; width: 64px; padding-top: 4px; text-align: center; }
+    .wa-edge-ruler span::after {
+      content: ""; position: absolute; left: 0; right: 0; bottom: var(--distance); height: 2px; background: #000;
+    }
+
     /* Icon filename captions via data-dbg on parent containers */
     [data-dbg]::after {
       content: attr(data-dbg);
@@ -267,8 +279,24 @@
 
   <!-- ===== CHART: Full-width, under both columns ===== -->
   {% if plugin_settings.displayGraph == "true" %}
+  <!-- The chart runs down to the screen's bottom margin: it takes the page's bottom padding
+       (1.5vw) as well, so the gap under it is exactly the "Bottom" margin in the settings. -->
+  <style>
+    body { padding-bottom: 0 !important; }
+    .wa-chart-container { height: calc(31dvh + 1.5vw); }
+  </style>
   <div class="wa-chart-container">
     <canvas id="hourlyTemperatureChart"></canvas>
+  </div>
+  {% endif %}
+
+  {% if plugin_settings.wireframeMode == "true" %}
+  <!-- Bottom-edge ruler, for finding how close to the edge the display can draw. The number
+       over each bar is how many pixels its lowest row sits above the screen's bottom edge. -->
+  <div class="wa-edge-ruler">
+    {% for distance in [0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30] %}
+    <span style="--distance: {{ distance }}px">{{ distance }}</span>
+    {% endfor %}
   </div>
   {% endif %}
 
@@ -499,6 +527,11 @@ document.addEventListener("DOMContentLoaded", function () {
   const FLAG_H = 24, FLAG_GAP = 5, FLAG_TOP = 6, FLAG_TEXT = 17, FLAG_ROWS_MAX = 3;
   const TOP_ROOM = 32, BOTTOM_ROOM = 26;
   const flagsHeight = rows => rows ? FLAG_TOP + rows * (FLAG_H + FLAG_GAP) - FLAG_GAP : 0;
+  // Under the plot's floor: the flags, then the time labels, then the weather icons, which end
+  // on the chart's bottom edge. The chart draws the time labels itself: left to Chart.js, the
+  // space made for the flags would be added under the labels as well.
+  const LABEL_TOP = 10, ICON_TOP = 27, ICON_SIZE = 31;
+  const roomBelow = rows => flagsHeight(rows) + (showIcons ? ICON_TOP + ICON_SIZE : LABEL_TOP + 18);
 
   // --- Wind and gusts (optional): a solid wind line and a dashed gust line ---
   const showWind = "{{ plugin_settings.displayGraphWind }}" === "true" && windRaw.some(isNum);
@@ -722,6 +755,15 @@ document.addEventListener("DOMContentLoaded", function () {
       });
       marks.forEach(mark => place(mark.label, { size: mark.size, weight: 600 }, spotsAt(mark.x, mark.y, mark.size, mark.above)));
 
+      // Times under every other point. The first time on each new day names the day, so a chart
+      // over days reads clearly.
+      const below = area.bottom + flagsHeight(flagLayout ? flagLayout.rows : 0);
+      points.forEach((point, i) => {
+        if (!isMarked(i)) return;
+        text(days[i] !== days[i - 2] ? `${days[i]} ${labels[i]}` : labels[i], point.x, below + LABEL_TOP,
+          { size: 14, align: 'center', base: 'top' });
+      });
+
       // Hazard flags under the plot's floor, right over the time labels: a block across the hours
       // each covers.
       if (flagLayout) {
@@ -752,12 +794,11 @@ document.addEventListener("DOMContentLoaded", function () {
       id: 'chartIcons',
       afterDatasetsDraw(chart) {
         const { ctx, chartArea: { bottom } } = chart;
-        const iconSize = 31;
         // Under the time labels, which sit below any flags.
-        const yPos = bottom + 25 + flagsHeight(flagLayout ? flagLayout.rows : 0);
+        const yPos = bottom + flagsHeight(flagLayout ? flagLayout.rows : 0) + ICON_TOP;
         chart.getDatasetMeta(0).data.forEach((point, i) => {
           const img = iconImages[i];
-          if (img && img.complete && img.naturalWidth) ctx.drawImage(img, point.x - iconSize / 2, yPos, iconSize, iconSize);
+          if (img && img.complete && img.naturalWidth) ctx.drawImage(img, point.x - ICON_SIZE / 2, yPos, ICON_SIZE, ICON_SIZE);
         });
       }
     });
@@ -825,7 +866,8 @@ document.addEventListener("DOMContentLoaded", function () {
           left: 16,
           right: 16,
           top: 12,
-          bottom: showIcons ? 18 : 0
+          // Flags, when there are any, start with one row.
+          bottom: roomBelow(flags.length ? 1 : 0)
         }
       },
       animation: { duration: 0 },
@@ -833,24 +875,10 @@ document.addEventListener("DOMContentLoaded", function () {
       maintainAspectRatio: false,
       scales: {
         x: {
-          ticks: {
-            // The gap holds the flags, when there are any; they start with one row.
-            autoSkip: false, padding: 10 + flagsHeight(flags.length ? 1 : 0),
-            maxRotation: 0, minRotation: 0,
-            color: ink,
-            font: { family: 'Jost', size: 14 },
-            callback: function(value, index) {
-              if (!isMarked(index)) return '';
-              // The first time on each new day names the day, so a chart over days reads clearly.
-              const label = this.getLabelForValue(value);
-              return days[index] !== days[index - 2] ? `${days[index]} ${label}` : label;
-            }
-          },
+          // The times are written by the overlay, under any flags.
+          ticks: { display: false },
           grid: { tickLength: 0, display: false },
-          offset: false,
-          // Chart.js adds the ticks' padding to the axis's sides as well, which would narrow the
-          // plot whenever flags are shown. The end labels are blank, so the sides need no room.
-          afterFit: scale => { scale.paddingLeft = 0; scale.paddingRight = 0; }
+          offset: false
         },
         // The rain bars' own axis: one slot per bar, each filling the gap between two points.
         xBars: {
@@ -899,7 +927,7 @@ document.addEventListener("DOMContentLoaded", function () {
   chart.update();
   if (flags.length) {
     flagLayout = layoutFlags(chart);
-    chart.options.scales.x.ticks.padding = 10 + flagsHeight(flagLayout.rows);
+    chart.options.layout.padding.bottom = roomBelow(flagLayout.rows);
     chart.update();
   }
 

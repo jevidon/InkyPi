@@ -632,7 +632,8 @@ document.addEventListener("DOMContentLoaded", function () {
         ctx.fillStyle = style.color || ink;
         ctx.fillText(s, x, y);
       }
-      // Writes a label at the first spot that is inside the plot and clear of the labels before it.
+      // Writes a label at the first spot that is inside the plot and clear of the labels and dots
+      // before it, or at the last spot when none is.
       function place(s, style, spotsFor) {
         ctx.font = `${style.weight} ${style.size}px Jost`;
         const width = ctx.measureText(s).width, spots = spotsFor(width);
@@ -642,7 +643,7 @@ document.addEventListener("DOMContentLoaded", function () {
         };
         const free = b => b[0] >= xLow - 4 && b[2] <= area.right + 2 && b[1] >= area.top - 3 && b[3] <= area.bottom + 6
           && !boxes.some(k => b[0] < k[2] && b[2] > k[0] && b[1] < k[3] && b[3] > k[1]);
-        const spot = spots.find(q => free(box(q))) || spots[0];
+        const spot = spots.find(q => free(box(q))) || spots[spots.length - 1];
         boxes.push(box(spot));
         text(s, spot.x, spot.y, { ...style, align: spot.align, halo: true });
       }
@@ -664,37 +665,41 @@ document.addEventListener("DOMContentLoaded", function () {
         });
       }
 
-      // Highs and lows, written where they happen. A high goes above its
-      // point and a low below; failing that, beside the point, then the other side of the line.
+      // The temperature's highs and lows and the peaks of the gust and wind lines: each is marked
+      // with a dot and written beside it. A label goes above its point (below, for a low); failing
+      // that, beside the point, then the other side of the line, then as near its first choice as
+      // the plot allows.
       const reach = Math.max(2, Math.round(6 / stepHours));
       const prominence = Math.max(isImperial ? 3 : 2, 0.15 * (maxTemp - minTemp));
-      const highs = turningPoints(temperatures, reach, prominence, 1);
-      const lows  = turningPoints(temperatures, reach, prominence, -1);
-      const tempSpots = (i, above) => width => {
-        const px = xs[i], py = yTemp(temperatures[i]);
+      const spotsAt = (px, py, size, above) => width => {
         const cx = clamp(px, xLow + width / 2, area.right - width / 2);
-        const up = { x: cx, y: py - 12, align: 'center' }, down = { x: cx, y: py + 25, align: 'center' };
-        return [above ? up : down, { x: px - 11, y: py + 7, align: 'right' }, { x: px + 11, y: py + 7, align: 'left' }, above ? down : up];
+        const up = { x: cx, y: py - 12, align: 'center' }, down = { x: cx, y: py + size + 6, align: 'center' };
+        const first = above ? up : down;
+        return [first, { x: px - 11, y: py + 7, align: 'right' }, { x: px + 11, y: py + 7, align: 'left' }, above ? down : up,
+          { ...first, y: clamp(first.y, area.top + size, area.bottom) }];
       };
-      [...highs, ...lows].forEach(i => {
-        ctx.beginPath(); ctx.arc(xs[i], yTemp(temperatures[i]), 7, 0, 2 * Math.PI); ctx.fillStyle = paper; ctx.fill();
-        ctx.beginPath(); ctx.arc(xs[i], yTemp(temperatures[i]), 5, 0, 2 * Math.PI); ctx.fillStyle = tempColor; ctx.fill();
-      });
-      highs.forEach(i => place(temperatures[i] + degree, { size: 21, weight: 600 }, tempSpots(i, true)));
-      lows.forEach(i => place(temperatures[i] + degree, { size: 21, weight: 600 }, tempSpots(i, false)));
-
-      // Peak gust (or wind, without gust readings) over its line: at the peak if that is free,
-      // otherwise a point or more to either side.
+      const marks = [];
+      turningPoints(temperatures, reach, prominence, 1).forEach(i => marks.push(
+        { x: xs[i], y: yTemp(temperatures[i]), color: tempColor, radius: 5, label: temperatures[i] + degree, size: 21, above: true }));
+      turningPoints(temperatures, reach, prominence, -1).forEach(i => marks.push(
+        { x: xs[i], y: yTemp(temperatures[i]), color: tempColor, radius: 5, label: temperatures[i] + degree, size: 21, above: false }));
       if (showWind) {
-        let peak = -1;
-        for (let i = 0; i <= last; i++) if (isNum(peakLine[i]) && (peak < 0 || peakLine[i] > peakLine[peak])) peak = i;
-        if (peak >= 0) {
-          const yWind = v => chart.scales.yw.getPixelForValue(v);
-          place(`${hasGust ? 'gust' : 'wind'} ${peakLine[peak]} ${windUnit}`, { size: 18, weight: 600 },
-            width => [0, -1, 1, -2, 2, -3, 3, -4, 4].map(k => peak + k).filter(i => i >= 0 && i <= last && isNum(peakLine[i]))
-              .map(i => ({ x: clamp(xs[i], xLow + width / 2, area.right - width / 2), y: Math.max(yWind(peakLine[i]) - 9, area.top + 19), align: 'center' })));
-        }
+        const yWind = v => chart.scales.yw.getPixelForValue(v);
+        const peakOf = values => values.reduce((best, v, i) => isNum(v) && (best < 0 || v > values[best]) ? i : best, -1);
+        // The dashed gust line's peak, then the solid wind line's.
+        [[hasGust ? gusts : [], 'gust'], [windRaw, 'wind']].forEach(([values, name]) => {
+          const i = peakOf(values);
+          if (i >= 0) marks.push(
+            { x: xs[i], y: yWind(values[i]), color: ink, radius: 4, label: `${name} ${values[i]} ${windUnit}`, size: 18, above: true });
+        });
       }
+      // Every dot first, so no label lands on another point's dot.
+      marks.forEach(mark => {
+        ctx.beginPath(); ctx.arc(mark.x, mark.y, mark.radius + 2, 0, 2 * Math.PI); ctx.fillStyle = paper; ctx.fill();
+        ctx.beginPath(); ctx.arc(mark.x, mark.y, mark.radius, 0, 2 * Math.PI); ctx.fillStyle = mark.color; ctx.fill();
+        boxes.push([mark.x - 6, mark.y - 6, mark.x + 6, mark.y + 6]);
+      });
+      marks.forEach(mark => place(mark.label, { size: mark.size, weight: 600 }, spotsAt(mark.x, mark.y, mark.size, mark.above)));
 
       // Hazard flags above the plot: a bar over the hours each covers, named at its start.
       if (flagLayout) {

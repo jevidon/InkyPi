@@ -104,6 +104,23 @@ CHART_BARS = 24
 # Hourly entries kept from the provider: the longest chart and the hour that closes it.
 HOURLY_FORECAST_HOURS = max(CHART_HOURS_CHOICES) + 1
 
+# Hazard flags over the agenda's hourly chart. Hours of one hazard this close together
+# are drawn as a single flag.
+CHART_FLAG_GAP_HOURS = 2
+# Gusts at or above this are flagged, in each wind unit.
+FLAG_GUST = {"mph": 30, "km/h": 50, "m/s": 13}
+# A feels-like temperature at or above this is flagged, in each unit system.
+FLAG_HEAT = {"imperial": 95, "metric": 35, "standard": 308}
+# A temperature at or below this is flagged as freezing.
+FLAG_FREEZING = {"imperial": 32, "metric": 0, "standard": 273}
+# Open-Meteo: thunderstorm weather codes, or this much CAPE (J/kg) with this chance of rain (%).
+STORM_CODES = (95, 96, 99)
+STORM_CAPE = 1000
+STORM_RAIN_CHANCE = 30
+FOG_CODES = (45, 48)
+# OpenWeatherMap condition ids: 2xx is a thunderstorm, 741 is fog.
+OWM_FOG_ID = 741
+
 # ---------------------------------------------------------------------------
 # Units
 # ---------------------------------------------------------------------------
@@ -151,7 +168,7 @@ OPEN_METEO_FORECAST_URL = (
     "?latitude={lat}&longitude={long}"
     "&hourly=weather_code,temperature_2m,precipitation,precipitation_probability"
     ",relative_humidity_2m,surface_pressure,visibility,uv_index"
-    ",wind_speed_10m,wind_gusts_10m"
+    ",wind_speed_10m,wind_gusts_10m,apparent_temperature,cape"
     "&daily=weathercode,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max,uv_index_max"
     ",wind_speed_10m_max,wind_direction_10m_dominant,precipitation_sum"
     "&current=temperature,windspeed,winddirection,is_day,precipitation"
@@ -380,9 +397,15 @@ class Weather(BasePlugin):
         template_params["layout"] = layout
         template_params["wind_unit"] = wind_unit
         template_params["plugin_settings"] = settings
-        template_params["hourly_chart"] = self._chart_points(
-            template_params.get("hourly_forecast", []), self._chart_hours(settings) // CHART_BARS
-        )
+        chart_hours = self._chart_hours(settings)
+        chart_step = chart_hours // CHART_BARS
+        hourly = template_params.get("hourly_forecast", [])
+        template_params["hourly_chart"] = self._chart_points(hourly, chart_step)
+        # For the agenda's chart: the hours between its points, its midnights and the hazards over its span.
+        template_params["chart_step"] = chart_step
+        template_params["chart_midnights"] = self._chart_midnights(hourly[:chart_hours])
+        # Up to and including the hour that closes the chart, so a peak named at its last point is flagged too.
+        template_params["chart_flags"] = self._chart_flags(hourly[:chart_hours + 1], units, wind_unit)
 
         now = datetime.now(tz)
         if time_format == "24h":
@@ -465,6 +488,61 @@ class Weather(BasePlugin):
                 "precipitation": max(h.get("precipitation") or 0 for h in hours),
             })
         return points
+
+    @staticmethod
+    def _chart_midnights(hourly):
+        """The midnights inside the hourly chart: {"at", "day"} for each.
+
+        `hourly` is one entry per hour of the chart. `at` counts hours from now, and
+        `day` names the day that starts there. A chart that starts at midnight has no
+        rule for it: the rule marks a day that begins partway along.
+        """
+        return [
+            {"at": i, "day": hour.get("day", "")}
+            for i, hour in enumerate(hourly) if i > 0 and hour.get("hour") == 0
+        ]
+
+    @staticmethod
+    def _chart_flags(hourly, units, wind_unit):
+        """Hazards over the hourly chart, each with the hours from now that it covers.
+
+        `hourly` is one entry per hour of the chart, the hour that closes it included.
+        A flag is {"kind", "label", "start", "end"}: it runs from hour `start` to hour
+        `end`, counted from now, so one that holds the closing hour ends an hour past the chart.
+        Hours of one hazard no more than CHART_FLAG_GAP_HOURS apart share a flag.
+        Temperatures are judged as the chart shows them, in whole degrees.
+        """
+        def reading(hour, key):
+            value = hour.get(key)
+            return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+        def at_least(key, limit):
+            return lambda hour: reading(hour, key) is not None and reading(hour, key) >= limit
+
+        def at_most(key, limit):
+            return lambda hour: reading(hour, key) is not None and reading(hour, key) <= limit
+
+        degree = "" if units == "standard" else "°"
+        gust, heat, freezing = FLAG_GUST[wind_unit], FLAG_HEAT[units], FLAG_FREEZING[units]
+        rules = [
+            ("storm", "Storms possible", lambda hour: bool(hour.get("storm"))),
+            ("heat", f"Feels {heat}{degree} or more", at_least("feels_like", heat)),
+            ("gust", f"Gusts {gust}+ {wind_unit.replace('km/h', 'kph')}", at_least("wind_gust", gust)),
+            ("freezing", "Freezing", at_most("temperature", freezing)),
+            ("fog", "Fog", lambda hour: bool(hour.get("fog"))),
+        ]
+        flags = []
+        for kind, label, test in rules:
+            flag = None
+            for i, hour in enumerate(hourly):
+                if not test(hour):
+                    continue
+                if flag and i - flag["end"] <= CHART_FLAG_GAP_HOURS:
+                    flag["end"] = i + 1
+                else:
+                    flag = {"kind": kind, "label": label, "start": i, "end": i + 1}
+                    flags.append(flag)
+        return sorted(flags, key=lambda flag: flag["start"])
 
     # ==================================================================
     # Agenda layout
@@ -1111,9 +1189,12 @@ class Weather(BasePlugin):
             icon_base = raw_icon[:2]
             icon_name = f"{icon_base}{suffix}" if icon_base in icon_codes_preserve else f"{icon_base}d"
             precip_value = (total_precip_mm / 25.4) if units == "imperial" else total_precip_mm
+            feels_like = hour.get("feels_like")
+            condition_id = hour.get("weather", [{}])[0].get("id", 0)
             hourly.append({
                 "time": self._format_time(dt, time_format, hour_only=True),
                 "day": dt.strftime("%a"),
+                "hour": dt.hour,
                 "temperature": int(hour.get("temp")),
                 "wind_speed": self._hourly_wind(hour.get("wind_speed"), wind_factor),
                 "wind_gust": self._hourly_wind(hour.get("wind_gust"), wind_factor),
@@ -1121,6 +1202,9 @@ class Weather(BasePlugin):
                 "rain": round(precip_value, 2),
                 "uv_index": round(hour.get("uvi", 0), 1),
                 "icon": self.get_plugin_dir(f"icons/{icon_name}.png"),
+                "feels_like": round(feels_like) if isinstance(feels_like, (int, float)) else None,
+                "storm": 200 <= condition_id < 300,
+                "fog": condition_id == OWM_FOG_ID,
             })
         return hourly
 
@@ -1287,14 +1371,19 @@ class Weather(BasePlugin):
         return 0
 
     def _parse_open_meteo_hourly(self, hourly_data, units, tz, time_format, sunrises, sunsets):
-        hourly = []
+        """The hours from now on, as far as the longest chart reaches."""
         times = hourly_data.get("time", [])
         temperatures = hourly_data.get("temperature_2m", [])
-        if units == "standard":
-            temperatures = [t + 273.15 for t in temperatures]
+        apparent = hourly_data.get("apparent_temperature", [])
+        temp_offset = 273.15 if units == "standard" else 0
         precip_probs = hourly_data.get("precipitation_probability", [])
         rain = hourly_data.get("precipitation", [])
         codes = hourly_data.get("weather_code", [])
+        cape = hourly_data.get("cape", [])
+        uv_index = hourly_data.get("uv_index", [])
+        # Already in the display unit, as requested from Open-Meteo.
+        wind_speeds = hourly_data.get("wind_speed_10m", [])
+        wind_gusts = hourly_data.get("wind_gusts_10m", [])
 
         sun_map = {}
         for sr_s, ss_s in zip(sunrises, sunsets):
@@ -1302,46 +1391,38 @@ class Weather(BasePlugin):
             ss_dt = _parse_local(ss_s, tz)
             sun_map[sr_dt.date()] = (sr_dt, ss_dt)
 
-        start_index = self._open_meteo_hourly_start_index(times, tz)
-
-        uv_index = hourly_data.get("uv_index", [])
-        # Already in the display unit, as requested from Open-Meteo.
-        wind_speeds = hourly_data.get("wind_speed_10m", [])
-        wind_gusts = hourly_data.get("wind_gusts_10m", [])
-
-        s_times = times[start_index:]
-        s_temps = temperatures[start_index:]
-        s_probs = precip_probs[start_index:]
-        s_rain = rain[start_index:]
-        s_codes = codes[start_index:]
-        s_uv = uv_index[start_index:]
-        s_wind = wind_speeds[start_index:]
-        s_gust = wind_gusts[start_index:]
-
         def number(values, i):
             value = values[i] if i < len(values) else None
             return value if isinstance(value, (int, float)) and not isinstance(value, bool) else 0
 
-        for i in range(min(HOURLY_FORECAST_HOURS, len(s_times))):
-            dt = _parse_local(s_times[i], tz)
+        def entry(i):
+            dt = _parse_local(times[i], tz)
             sunrise, sunset = sun_map.get(dt.date(), (None, None))
             is_day = 1 if (sunrise and sunset and sunrise <= dt < sunset) else 0
-            code = s_codes[i] if i < len(s_codes) else 0
+            code = codes[i] if i < len(codes) else 0
             icon_name = self._map_weather_code_to_icon(code, is_day)
-            hourly.append({
+            feels_like = apparent[i] if i < len(apparent) else None
+            # Open-Meteo gives each hour's rain and chance of rain at the hour's end.
+            # Read them from the next time so each entry holds the hour it starts.
+            chance = number(precip_probs, i + 1)
+            return {
                 "time": self._format_time(dt, time_format, True),
                 "day": dt.strftime("%a"),
-                "temperature": int(s_temps[i]) if i < len(s_temps) else 0,
-                "wind_speed": self._hourly_wind(s_wind[i] if i < len(s_wind) else None),
-                "wind_gust": self._hourly_wind(s_gust[i] if i < len(s_gust) else None),
-                # Open-Meteo gives each hour's rain and chance of rain at the hour's end.
-                # Read them from the next time so each entry holds the hour it starts.
-                "precipitation": number(s_probs, i + 1) / 100,
-                "rain": number(s_rain, i + 1),
-                "uv_index": round(s_uv[i], 1) if i < len(s_uv) else 0,
+                "hour": dt.hour,
+                "temperature": int(temperatures[i] + temp_offset) if i < len(temperatures) else 0,
+                "wind_speed": self._hourly_wind(wind_speeds[i] if i < len(wind_speeds) else None),
+                "wind_gust": self._hourly_wind(wind_gusts[i] if i < len(wind_gusts) else None),
+                "precipitation": chance / 100,
+                "rain": number(rain, i + 1),
+                "uv_index": round(uv_index[i], 1) if i < len(uv_index) else 0,
                 "icon": self.get_plugin_dir(f"icons/{icon_name}.png"),
-            })
-        return hourly
+                "feels_like": round(feels_like + temp_offset) if isinstance(feels_like, (int, float)) else None,
+                "storm": code in STORM_CODES or (number(cape, i) >= STORM_CAPE and chance >= STORM_RAIN_CHANCE),
+                "fog": code in FOG_CODES,
+            }
+
+        start_index = self._open_meteo_hourly_start_index(times, tz)
+        return [entry(i) for i in range(start_index, min(start_index + HOURLY_FORECAST_HOURS, len(times)))]
 
     def _parse_open_meteo_day_charts(self, hourly_data, units):
         """Hourly series for the chart in each agenda card, keyed by ISO date.

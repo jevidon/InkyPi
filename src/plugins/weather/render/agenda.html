@@ -84,6 +84,18 @@
     .wa-chart-container  { background: rgba(0,100,0,0.08); outline: 2px dashed green; position: relative; }
     .wa-chart-container::before { content: "wa-chart-container"; background: green; color: #fff; top: 0; left: 0; }
 
+    /* Bottom-edge ruler: a strip over the bottom of the screen with a bar at each distance from the edge */
+    .wa-edge-ruler {
+      position: fixed; left: 0; right: 0; bottom: 0; height: 64px; z-index: 500;
+      display: flex; justify-content: space-evenly;
+      background: #fff; border-top: 2px solid #000;
+      font: bold 20px monospace; color: #000;
+    }
+    .wa-edge-ruler span { position: relative; width: 64px; padding-top: 4px; text-align: center; }
+    .wa-edge-ruler span::after {
+      content: ""; position: absolute; left: 0; right: 0; bottom: var(--distance); height: 2px; background: #000;
+    }
+
     /* Icon filename captions via data-dbg on parent containers */
     [data-dbg]::after {
       content: attr(data-dbg);
@@ -267,8 +279,25 @@
 
   <!-- ===== CHART: Full-width, under both columns ===== -->
   {% if plugin_settings.displayGraph == "true" %}
+  <!-- The chart runs down almost to the screen's bottom margin: it takes all but 2px of the
+       page's bottom padding (1.5vw), so the gap under it is the "Bottom" margin in the settings
+       plus that 2px. On the panel, nothing less read cleanly at the edge. -->
+  <style>
+    body { padding-bottom: 2px !important; }
+    .wa-chart-container { height: calc(31dvh + 1.5vw - 2px); }
+  </style>
   <div class="wa-chart-container">
     <canvas id="hourlyTemperatureChart"></canvas>
+  </div>
+  {% endif %}
+
+  {% if plugin_settings.wireframeMode == "true" %}
+  <!-- Bottom-edge ruler, for finding how close to the edge the display can draw. The number
+       over each bar is how many pixels its lowest row sits above the screen's bottom edge. -->
+  <div class="wa-edge-ruler">
+    {% for distance in [0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30] %}
+    <span style="--distance: {{ distance }}px">{{ distance }}</span>
+    {% endfor %}
   </div>
   {% endif %}
 
@@ -441,9 +470,8 @@ document.addEventListener("DOMContentLoaded", function () {
             legend: { display: false },
             tooltip: { enabled: false },
             // Annotations registered for the hourly chart below do not belong on these.
-            annotationRain: false,
+            hourlyOverlay: false,
             chartIcons: false,
-            windLabels: false,
           },
           elements: { line: { borderJoinStyle: 'round' } }
         },
@@ -473,30 +501,52 @@ document.addEventListener("DOMContentLoaded", function () {
   const windRaw       = [{% for h in hourly_chart %}{{ h.wind_speed if h.wind_speed is number else 'null' }}{% if not loop.last %}, {% endif %}{% endfor %}];
   const gustRaw       = [{% for h in hourly_chart %}{{ h.wind_gust if h.wind_gust is number else 'null' }}{% if not loop.last %}, {% endif %}{% endfor %}];
   const iconPaths     = [{% for h in hourly_chart %}"{{ h.icon | replace('\\', '/') }}"{% if not loop.last %}, {% endif %}{% endfor %}];
-  if (labels.length < 2) return;
+  // Midnights inside the span: {at, day}, in hours from now, with the day that starts there.
+  const midnights     = {{ (chart_midnights or []) | tojson }};
+  // Hazards over the span: {kind, label, start, end}, in hours from now.
+  const flags         = {{ (chart_flags or []) | tojson }};
+  const stepHours     = {{ chart_step or 1 }};
+  const last          = labels.length - 1;
+  if (last < 1) return;
   // Times and weather icons go under every other point, but not the two ends, where they would
   // be cut off. That is every 2, 4 or 6 hours.
-  const isMarked      = i => i > 0 && i < labels.length - 1 && i % 2 === 0;
+  const isMarked      = i => i > 0 && i < last && i % 2 === 0;
   const units         = document.getElementById('units-container').dataset.units;
   const isImperial    = units === "imperial";
   const rainUnit      = isImperial ? "in" : "mm";
   const threshold     = isImperial ? 0.0035 : 0.09;
+  const degree        = units !== "standard" ? "°" : "";
+  const ink           = "{{ plugin_settings.textColor }}" || '#000000';
+  const paper         = "{{ plugin_settings.backgroundColor }}" || '#ffffff';
+  const showIcons     = {{ 'true' if plugin_settings.displayGraphIcons == "true" else 'false' }};
+  const showRain      = {{ 'true' if plugin_settings.displayRain == "true" else 'false' }};
+  const isNum         = v => typeof v === 'number';
+
+  // Room around the plot. Each row of hazard flags sits between its floor and the time labels,
+  // and the temperature line keeps clear of its top and bottom so its highs and lows can be
+  // written beside it.
+  const FLAG_H = 24, FLAG_GAP = 5, FLAG_TOP = 6, FLAG_TEXT = 17, FLAG_ROWS_MAX = 3;
+  const TOP_ROOM = 32, BOTTOM_ROOM = 26;
+  const flagsHeight = rows => rows ? FLAG_TOP + rows * (FLAG_H + FLAG_GAP) - FLAG_GAP : 0;
+  // Under the plot's floor: the flags, then the time labels, then the weather icons, which end
+  // on the chart's bottom edge. The chart draws the time labels itself: left to Chart.js, the
+  // space made for the flags would be added under the labels as well.
+  const LABEL_TOP = 10, ICON_TOP = 27, ICON_SIZE = 31;
+  const roomBelow = rows => flagsHeight(rows) + (showIcons ? ICON_TOP + ICON_SIZE : LABEL_TOP + 18);
 
   // --- Wind and gusts (optional): a solid wind line and a dashed gust line ---
-  const isNum    = v => typeof v === 'number';
   const showWind = "{{ plugin_settings.displayGraphWind }}" === "true" && windRaw.some(isNum);
   const hasGust  = showWind && gustRaw.some(isNum);
   // Where an hour has no gust reading the gust line meets the wind line; gusts never dip below wind.
   const gusts    = gustRaw.map((g, i) => isNum(g) ? (isNum(windRaw[i]) ? Math.max(g, windRaw[i]) : g) : windRaw[i]);
-  const peakWind = showWind ? Math.max(...windRaw.filter(isNum)) : 0;
-  const peakGust = hasGust ? Math.max(...gusts.filter(isNum)) : peakWind;
+  const peakLine = hasGust ? gusts : windRaw;
+  const peakGust = showWind ? Math.max(...peakLine.filter(isNum)) : 0;
   // Scale: 0 to the next multiple of 20 at or above the peak. Its ends are not written on screen.
   const windMax  = Math.max(20, Math.ceil(peakGust / 20) * 20);
   const windUnit = "{{ wind_unit | replace('km/h', 'kph') }}";
 
   // Wind is drawn in the text colour at reduced strength so it recedes behind the weather.
-  const windLine = withAlpha("{{ plugin_settings.textColor }}", 0.4);
-  const windInk  = withAlpha("{{ plugin_settings.textColor }}", 0.67);
+  const windLine = withAlpha(ink, 0.4);
   const windDatasets = !showWind ? [] : [
     {
       type: 'line',
@@ -527,109 +577,244 @@ document.addEventListener("DOMContentLoaded", function () {
 
   const minTemp = Math.min(...temperatures);
   const maxTemp = Math.max(...temperatures);
+  const tempColor = 'rgb(241, 122, 36)';
+  const rainColor = 'rgb(26, 111, 176)';
 
-  function uvColor(uv) {
-    if (uv >= 11) return '#a855f7';
-    if (uv >= 8)  return '#ef4444';
-    if (uv >= 6)  return '#f97316';
-    if (uv >= 3)  return '#eab308';
-    return '#22c55e';
-  }
+  // Each flag's block colour and the colour of its name. Storms, heat and freezing are solid blocks
+  // with white names. Gusts and fog are quieter: a light grey block with the name in the text
+  // colour. Names stay solid: on the panel a tint is dithered into dots, which small text does
+  // not survive.
+  const FLAG_GREY = '#d4d4d4';
+  const flagStyle = {
+    storm:    { fill: '#c62828', name: paper },
+    heat:     { fill: '#c62828', name: paper },
+    freezing: { fill: rainColor, name: paper },
+    gust:     { fill: FLAG_GREY, name: ink },
+    fog:      { fill: FLAG_GREY, name: ink },
+  };
 
+  // Rain keeps to the lower 60% of the plot, clear of the temperature labels.
   const rainMax = Math.max(0, ...rain);
   const y1Max   = Math.max(rainMax, isImperial ? 0.1 : 2.5);
 
-  Chart.register({
-    id: 'annotationRain',
-    afterDatasetsDraw(chart, args, pluginOptions) {
-      const { ctx } = chart;
-      const rainData = pluginOptions.precipitationData || [];
-      const meta = chart.getDatasetMeta(1);
-      ctx.save();
-      ctx.textAlign = 'center';
-      ctx.font = '18px Jost';
-      meta.data.forEach((bar, i) => {
-        const amount = rainData[i];
-        if (amount && amount > threshold) {
-          const x = bar.x;
-          const chartTop = chart.chartArea.top;
-          let textY = bar.y - 22;
-          let unitY  = bar.y - 5;
-          if (textY < chartTop) {
-            textY = chartTop + 3;
-            unitY = chartTop + 20;
-          }
-          ctx.fillStyle = "{{ plugin_settings.textColor }}";
-          ctx.fillText(amount.toFixed(2), x, textY);
-          ctx.fillText(rainUnit, x, unitY);
-        }
-      });
-      ctx.restore();
+  // Runs of true values: [first, last] index pairs.
+  function runs(count, test) {
+    const out = [];
+    let start = -1;
+    for (let i = 0; i <= count; i++) {
+      const on = i < count && test(i);
+      if (start >= 0 && !on) { out.push([start, i - 1]); start = -1; }
+      if (on && start < 0) start = i;
     }
-  });
+    return out;
+  }
+  function indexOfMax(values, first, lastIndex) {
+    let best = first;
+    for (let i = first + 1; i <= lastIndex; i++) if (values[i] > values[best]) best = i;
+    return best;
+  }
+  // Highs (sign 1) or lows (sign -1) that stand out from the hours around them, plus the overall one.
+  function turningPoints(values, reach, prominence, sign) {
+    const v = values.map(x => x * sign), found = [];
+    for (let i = 1; i < v.length - 1; i++) {
+      let peak = true;
+      for (let k = Math.max(0, i - reach); k <= Math.min(v.length - 1, i + reach); k++) {
+        if (v[k] > v[i] || (v[k] === v[i] && k < i)) { peak = false; break; }
+      }
+      if (!peak) continue;
+      let left = v[i], right = v[i], k;
+      for (k = i - 1; k >= 0 && v[k] <= v[i]; k--) left = Math.min(left, v[k]);
+      for (k = i + 1; k < v.length && v[k] <= v[i]; k++) right = Math.min(right, v[k]);
+      if (v[i] - Math.max(left, right) >= prominence) found.push(i);
+    }
+    const top = v.indexOf(Math.max(...v));
+    if (!found.includes(top)) found.push(top);
+    return found.sort((a, b) => a - b);
+  }
 
-  {% if plugin_settings.displayGraphIcons == "true" %}
+  // The flags' rows, worked out once the plot has its width. A flag is a block under the plot's
+  // floor across the hours it covers, named inside when the name fits and beside it when not.
+  // It takes the first row where its block and name are clear of the flags already there.
+  // Null until then.
+  let flagLayout = null;
+  function layoutFlags(chart) {
+    const points = chart.getDatasetMeta(0).data;
+    const slot = points[1].x - points[0].x, xStart = points[0].x, xEnd = points[last].x;
+    const rows = [], placed = [];
+    ctx.save();
+    ctx.font = `600 ${FLAG_TEXT}px Jost`;
+    flags.forEach(flag => {
+      // A flag never runs past the chart; one for its closing hour alone is a stub at the end.
+      const x1 = Math.min(xStart + flag.end / stepHours * slot, xEnd);
+      const x0 = Math.min(xStart + flag.start / stepHours * slot, x1 - 6);
+      const width = ctx.measureText(flag.label).width;
+      // The name goes inside the block, or after it, or before it when the chart ends first.
+      const inside = width + 14 <= x1 - x0;
+      const textX = inside ? x0 + 7 : x1 + 7 + width <= xEnd ? x1 + 7 : Math.max(x0 - 7 - width, xStart);
+      const from = Math.min(x0, textX), to = Math.max(x1, textX + width);
+      let row = 0;
+      while (rows[row] && rows[row].some(([a, b]) => from < b + 14 && to > a - 14)) row++;
+      if (row >= FLAG_ROWS_MAX) return;
+      (rows[row] = rows[row] || []).push([from, to]);
+      placed.push({ ...flag, x0, x1, textX, inside, row });
+    });
+    ctx.restore();
+    return { rows: rows.length, placed };
+  }
+
   Chart.register({
-    id: 'chartIcons',
+    id: 'hourlyOverlay',
     afterDatasetsDraw(chart) {
-      const { ctx, chartArea: { bottom }, scales: { x } } = chart;
-      const iconSize = 31;
+      const { ctx, chartArea: area } = chart;
+      const points = chart.getDatasetMeta(0).data;
+      const xs = points.map(p => p.x);
+      const yTemp = v => chart.scales.y.getPixelForValue(v);
+      const xLow = area.left + 2;
+      const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+      // Boxes of labels already on the plot, so later labels can step around them.
+      const boxes = [];
+      function text(s, x, y, style) {
+        ctx.font = `${style.weight || 400} ${style.size}px Jost`;
+        ctx.textAlign = style.align || 'left';
+        ctx.textBaseline = style.base || 'alphabetic';
+        if (style.halo) {
+          ctx.lineJoin = 'round'; ctx.lineWidth = 4; ctx.strokeStyle = withAlpha(paper, 0.88);
+          ctx.strokeText(s, x, y);
+        }
+        ctx.fillStyle = style.color || ink;
+        ctx.fillText(s, x, y);
+      }
+      // Writes a label at the first spot that is inside the plot and clear of the labels and dots
+      // before it, or at the last spot when none is.
+      function place(s, style, spotsFor) {
+        ctx.font = `${style.weight} ${style.size}px Jost`;
+        const width = ctx.measureText(s).width, spots = spotsFor(width);
+        const box = q => {
+          const x0 = q.align === 'left' ? q.x : q.align === 'right' ? q.x - width : q.x - width / 2;
+          return [x0 - 4, q.y - style.size, x0 + width + 4, q.y + 4];
+        };
+        const free = b => b[0] >= xLow - 4 && b[2] <= area.right + 2 && b[1] >= area.top - 3 && b[3] <= area.bottom + 6
+          && !boxes.some(k => b[0] < k[2] && b[2] > k[0] && b[1] < k[3] && b[3] > k[1]);
+        const spot = spots.find(q => free(box(q))) || spots[spots.length - 1];
+        boxes.push(box(spot));
+        text(s, spot.x, spot.y, { ...style, align: spot.align, halo: true });
+      }
       ctx.save();
-      chart.getDatasetMeta(0).data.forEach((point, i) => {
-        if (!isMarked(i)) return;
-        const img = new Image();
-        img.src = iconPaths[i];
-        const xPos = point.x - (iconSize / 2);
-        const yPos = bottom + 25;
-        if (img.complete) ctx.drawImage(img, xPos, yPos, iconSize, iconSize);
-        else img.onload = () => ctx.drawImage(img, xPos, yPos, iconSize, iconSize);
+      ctx.setLineDash([]);
+
+      // A thin rule down the plot at each midnight, with the new day named at its top.
+      midnights.forEach(midnight => {
+        const x = Math.round(xs[0] + midnight.at / stepHours * (xs[1] - xs[0])) + 0.5;
+        ctx.strokeStyle = ink;
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(x, area.top); ctx.lineTo(x, area.bottom); ctx.stroke();
+        ctx.font = '600 16px Jost';
+        const width = ctx.measureText(midnight.day).width;
+        if (x + 7 + width > area.right) return;
+        boxes.push([x - 2, area.top, x + 11 + width, area.top + 22]);
+        text(midnight.day, x + 7, area.top + 16, { size: 16, weight: 600, halo: true });
       });
+
+      // Rain: one total per wet spell, over its tallest bar.
+      if (showRain) {
+        const bars = chart.getDatasetMeta(1).data;
+        runs(rain.length, i => rain[i] > threshold).forEach(([first, lastBar]) => {
+          const peak = indexOfMax(rain, first, lastBar);
+          const total = rain.slice(first, lastBar + 1).reduce((sum, r) => sum + r, 0);
+          const label = `${total.toFixed(2)} ${rainUnit}`;
+          ctx.font = '600 17px Jost';
+          const half = ctx.measureText(label).width / 2 + 4;
+          const x = clamp(bars[peak].x, xLow + half, area.right - half), y = Math.max(bars[peak].y - 8, area.top + 18);
+          boxes.push([x - half, y - 17, x + half, y + 4]);
+          text(label, x, y, { size: 17, weight: 600, align: 'center', halo: true });
+        });
+      }
+
+      // The temperature's highs and lows and the peaks of the gust and wind lines: each is marked
+      // with a dot and written beside it. A label goes above its point (below, for a low); failing
+      // that, beside the point, then the other side of the line, then as near its first choice as
+      // the plot allows.
+      const reach = Math.max(2, Math.round(6 / stepHours));
+      const prominence = Math.max(isImperial ? 3 : 2, 0.15 * (maxTemp - minTemp));
+      const spotsAt = (px, py, size, above) => width => {
+        const cx = clamp(px, xLow + width / 2, area.right - width / 2);
+        const up = { x: cx, y: py - 12, align: 'center' }, down = { x: cx, y: py + size + 6, align: 'center' };
+        const first = above ? up : down;
+        return [first, { x: px - 11, y: py + 7, align: 'right' }, { x: px + 11, y: py + 7, align: 'left' }, above ? down : up,
+          { ...first, y: clamp(first.y, area.top + size, area.bottom) }];
+      };
+      const marks = [];
+      turningPoints(temperatures, reach, prominence, 1).forEach(i => marks.push(
+        { x: xs[i], y: yTemp(temperatures[i]), color: tempColor, radius: 5, label: temperatures[i] + degree, size: 21, above: true }));
+      turningPoints(temperatures, reach, prominence, -1).forEach(i => marks.push(
+        { x: xs[i], y: yTemp(temperatures[i]), color: tempColor, radius: 5, label: temperatures[i] + degree, size: 21, above: false }));
+      if (showWind) {
+        const yWind = v => chart.scales.yw.getPixelForValue(v);
+        const peakOf = values => values.reduce((best, v, i) => isNum(v) && (best < 0 || v > values[best]) ? i : best, -1);
+        // The dashed gust line's peak, then the solid wind line's.
+        [[hasGust ? gusts : [], 'gust'], [windRaw, 'wind']].forEach(([values, name]) => {
+          const i = peakOf(values);
+          if (i >= 0) marks.push(
+            { x: xs[i], y: yWind(values[i]), color: ink, radius: 4, label: `${name} ${values[i]} ${windUnit}`, size: 18, above: true });
+        });
+      }
+      // Every dot first, so no label lands on another point's dot.
+      marks.forEach(mark => {
+        ctx.beginPath(); ctx.arc(mark.x, mark.y, mark.radius + 2, 0, 2 * Math.PI); ctx.fillStyle = paper; ctx.fill();
+        ctx.beginPath(); ctx.arc(mark.x, mark.y, mark.radius, 0, 2 * Math.PI); ctx.fillStyle = mark.color; ctx.fill();
+        boxes.push([mark.x - 6, mark.y - 6, mark.x + 6, mark.y + 6]);
+      });
+      marks.forEach(mark => place(mark.label, { size: mark.size, weight: 600 }, spotsAt(mark.x, mark.y, mark.size, mark.above)));
+
+      // Times under every other point. The first time on each new day names the day, so a chart
+      // over days reads clearly.
+      const below = area.bottom + flagsHeight(flagLayout ? flagLayout.rows : 0);
+      points.forEach((point, i) => {
+        if (!isMarked(i)) return;
+        text(days[i] !== days[i - 2] ? `${days[i]} ${labels[i]}` : labels[i], point.x, below + LABEL_TOP,
+          { size: 14, align: 'center', base: 'top' });
+      });
+
+      // Hazard flags under the plot's floor, right over the time labels: a block across the hours
+      // each covers.
+      if (flagLayout) {
+        flagLayout.placed.forEach(flag => {
+          const y = area.bottom + FLAG_TOP + flag.row * (FLAG_H + FLAG_GAP);
+          const style = flagStyle[flag.kind] || { fill: FLAG_GREY, name: ink };
+          ctx.fillStyle = style.fill;
+          ctx.fillRect(flag.x0, y, flag.x1 - flag.x0, FLAG_H);
+          // A name beside its block is on the page, so it takes the block's colour, or the text
+          // colour when the block is grey.
+          const beside = style.fill === FLAG_GREY ? ink : style.fill;
+          text(flag.label, flag.textX, y + FLAG_H / 2 + 1,
+            { size: FLAG_TEXT, weight: 600, base: 'middle', color: flag.inside ? style.name : beside });
+        });
+      }
       ctx.restore();
     }
   });
-  {% endif %}
 
-  if (showWind) {
+  // One image per weather icon, loaded once. An icon is drawn only when the whole chart is drawn,
+  // and the chart is drawn again as each one arrives. Nothing is painted from a load callback:
+  // a callback left over from an earlier layout would put its icon where that layout had it.
+  const iconImages = iconPaths.map((path, i) => {
+    if (!showIcons || !isMarked(i)) return null;
+    const img = new Image();
+    img.onload = () => chart.draw();
+    img.src = path;
+    return img;
+  });
+  if (showIcons) {
     Chart.register({
-      id: 'windLabels',
-      // Peak gust and peak wind beside the left axis, between the temperature labels and level
-      // with the peaks on the plot.
-      afterDraw(chart) {
-        const s = chart.scales.yw;
-        if (!s) return;
-        const { ctx, chartArea } = chart;
-        // Each label is a number with its unit underneath. Keep the two clear of each other and of
-        // the temperature labels at the top and bottom of the axis.
-        const highest = chartArea.top + 20;
-        const lowest  = chartArea.bottom - 34;
-        let gy = Math.max(s.getPixelForValue(peakGust), highest);
-        let wy = Math.max(s.getPixelForValue(peakWind), hasGust ? gy + 38 : highest);
-        wy = Math.min(wy, lowest);
-        gy = Math.min(gy, wy - 38);
-        const marks = [[wy, peakWind, []]];
-        if (hasGust) marks.unshift([gy, peakGust, [4, 3]]);
-        ctx.save();
-        ctx.strokeStyle = windLine;
-        ctx.lineWidth = 2.5;
-        ctx.textAlign = 'right';
-        const axis = chartArea.left;
-        marks.forEach(([y, value, dash]) => {
-          // Short marker against the axis: dashed for gusts, solid for wind.
-          ctx.setLineDash(dash);
-          ctx.beginPath();
-          ctx.moveTo(axis - 12, y);
-          ctx.lineTo(axis - 1, y);
-          ctx.stroke();
-          ctx.setLineDash([]);
-          ctx.fillStyle = windInk;
-          ctx.font = '600 17px Jost';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(String(value), axis - 16, y + 1);
-          ctx.font = '13px Jost';
-          ctx.textBaseline = 'top';
-          ctx.fillText(windUnit, axis - 16, y + 10);
+      id: 'chartIcons',
+      afterDatasetsDraw(chart) {
+        const { ctx, chartArea: { bottom } } = chart;
+        // Under the time labels, which sit below any flags.
+        const yPos = bottom + flagsHeight(flagLayout ? flagLayout.rows : 0) + ICON_TOP;
+        chart.getDatasetMeta(0).data.forEach((point, i) => {
+          const img = iconImages[i];
+          if (img && img.complete && img.naturalWidth) ctx.drawImage(img, point.x - ICON_SIZE / 2, yPos, ICON_SIZE, ICON_SIZE);
         });
-        ctx.restore();
       }
     });
   }
@@ -647,14 +832,13 @@ document.addEventListener("DOMContentLoaded", function () {
           borderWidth: 0,
           pointRadius: 0,
           fill: 'start', // Fill to the bottom of the plot area, not the y=0 origin
-          clip: false,
           tension: 0.5
         },
         {
           type: 'bar',
           label: 'Precipitation Amount',
           data: rain,
-          borderColor: 'rgba(26, 111, 176, 1)',
+          borderColor: rainColor,
           borderWidth: { top: 2, right: 0, bottom: 0, left: 0 },
           xAxisID: 'xBars',
           yAxisID: 'y1',
@@ -682,11 +866,10 @@ document.addEventListener("DOMContentLoaded", function () {
           label: 'Hourly Temperature Line',
           data: temperatures,
           order: -0.75,
-          borderColor: 'rgba(241, 122, 36, 0.9)',
-          borderWidth: 2,
+          borderColor: tempColor,
+          borderWidth: 3.5,
           pointRadius: 0,
           fill: false,
-          clip: false,
           tension: 0.5
         },
         ...windDatasets
@@ -695,8 +878,11 @@ document.addEventListener("DOMContentLoaded", function () {
     options: {
       layout: {
         padding: {
-          top:    {% if plugin_settings.displayGraphIcons == "true" %}12{% else %}8{% endif %},
-          bottom: {% if plugin_settings.displayGraphIcons == "true" %}18{% else %}0{% endif %}
+          left: 16,
+          right: 16,
+          top: 12,
+          // Flags, when there are any, start with one row.
+          bottom: roomBelow(flags.length ? 1 : 0)
         }
       },
       animation: { duration: 0 },
@@ -704,18 +890,8 @@ document.addEventListener("DOMContentLoaded", function () {
       maintainAspectRatio: false,
       scales: {
         x: {
-          ticks: {
-            autoSkip: false, padding: 10,
-            maxRotation: 0, minRotation: 0,
-            color: "{{ plugin_settings.textColor }}",
-            font: { family: 'Jost', size: 14 },
-            callback: function(value, index) {
-              if (!isMarked(index)) return '';
-              // The first time on each new day names the day, so a chart over days reads clearly.
-              const label = this.getLabelForValue(value);
-              return days[index] !== days[index - 2] ? `${days[index]} ${label}` : label;
-            }
-          },
+          // The times are written by the overlay, under any flags.
+          ticks: { display: false },
           grid: { tickLength: 0, display: false },
           offset: false
         },
@@ -726,42 +902,23 @@ document.addEventListener("DOMContentLoaded", function () {
           display: false,
           offset: true,
         },
+        // Temperature. Its ends are set below, once the plot's height is known; the values are
+        // written on the line, so the axis shows only its rule.
         y: {
-          ticks: {
-            padding: 5,
-            color: "{{ plugin_settings.textColor }}",
-            font: { family: 'Jost', size: 18 },
-            autoSkip: false,
-            callback: function(value, index, values) {
-              if (index === values.length - 1) return (units !== "standard") ? maxTemp + "°" : maxTemp;
-              if (index === 0) return (units !== "standard") ? minTemp + "°" : minTemp;
-              return '';
-            }
-          },
+          ticks: { display: false },
           grid: { display: false },
           min: minTemp,
           max: maxTemp,
         },
         y1: {
           position: 'right',
+          ticks: { display: false },
           grid: { display: false },
-          ticks: {
-            padding: 0,
-            color: "{{ plugin_settings.textColor }}",
-            font: { family: 'Jost' },
-            autoSkip: false,
-            callback: function() { return ''; }
-          },
           min: 0,
-          max: y1Max,
+          max: y1Max / 0.6,
         },
         y2: {
-          position: 'left',
-          grid: { display: false },
-          border: { display: false },
-          ticks: {
-            display: false,
-          },
+          display: false,
           min: 0,
           max: 11,
         },
@@ -776,14 +933,25 @@ document.addEventListener("DOMContentLoaded", function () {
       },
       plugins: {
         legend: { display: false },
-        {% if plugin_settings.displayRain == "true" %}
-        annotationRain: { precipitationData: rain }
-        {% endif %}
       },
       elements: { line: { borderJoinStyle: 'round' } }
     }
   });
 
+  // Flags first: their rows set how much room the plot gives up below it.
+  chart.update();
+  if (flags.length) {
+    flagLayout = layoutFlags(chart);
+    chart.options.layout.padding.bottom = roomBelow(flagLayout.rows);
+    chart.update();
+  }
+
+  // Then the temperature scale: stretched so the line stays TOP_ROOM and BOTTOM_ROOM pixels
+  // inside the plot.
+  const plotHeight = chart.chartArea.bottom - chart.chartArea.top;
+  const perPixel = ((maxTemp - minTemp) || 1) / Math.max(plotHeight - TOP_ROOM - BOTTOM_ROOM, 40);
+  chart.options.scales.y.min = minTemp - BOTTOM_ROOM * perPixel;
+  chart.options.scales.y.max = maxTemp + TOP_ROOM * perPixel;
   chart.update();
 
   const gradientStart = chart.scales['y'].getPixelForValue(maxTemp);

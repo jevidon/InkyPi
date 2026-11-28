@@ -737,24 +737,28 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
+  // One image per weather icon, loaded once. An icon is drawn only when the whole chart is drawn,
+  // and the chart is drawn again as each one arrives. Nothing is painted from a load callback:
+  // a callback left over from an earlier layout would put its icon where that layout had it.
+  const iconImages = iconPaths.map((path, i) => {
+    if (!showIcons || !isMarked(i)) return null;
+    const img = new Image();
+    img.onload = () => chart.draw();
+    img.src = path;
+    return img;
+  });
   if (showIcons) {
     Chart.register({
       id: 'chartIcons',
       afterDatasetsDraw(chart) {
         const { ctx, chartArea: { bottom } } = chart;
         const iconSize = 31;
-        ctx.save();
+        // Under the time labels, which sit below any flags.
+        const yPos = bottom + 25 + flagsHeight(flagLayout ? flagLayout.rows : 0);
         chart.getDatasetMeta(0).data.forEach((point, i) => {
-          if (!isMarked(i)) return;
-          const img = new Image();
-          img.src = iconPaths[i];
-          const xPos = point.x - (iconSize / 2);
-          // Under the time labels, which sit below any flags.
-          const yPos = bottom + 25 + flagsHeight(flagLayout ? flagLayout.rows : 0);
-          if (img.complete) ctx.drawImage(img, xPos, yPos, iconSize, iconSize);
-          else img.onload = () => ctx.drawImage(img, xPos, yPos, iconSize, iconSize);
+          const img = iconImages[i];
+          if (img && img.complete && img.naturalWidth) ctx.drawImage(img, point.x - iconSize / 2, yPos, iconSize, iconSize);
         });
-        ctx.restore();
       }
     });
   }

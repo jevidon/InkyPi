@@ -1,9 +1,11 @@
 import json
 import os
 import sys
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
+import pytz
 import requests
 
 # Plugins import their siblings as top-level packages (e.g. `plugins.base_plugin`),
@@ -13,6 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src
 from plugins.weather.weather import Weather, _request_open_meteo  # noqa: E402
 
 MODULE = "plugins.weather.weather"
+TZ = pytz.timezone("America/New_York")
 
 OPEN_METEO_DATA = {
     "current": {
@@ -269,6 +272,39 @@ class TestOpenMeteoCache:
         assert params["current_temperature"] == seeded["current_temperature"]
         assert "Using cached Open-Meteo data" in caplog.text
 
+    def test_cached_weather_gives_when_it_was_fetched(self, tmp_path):
+        settings = _settings(layout="agenda")
+        config = _device_config(api_key="key")
+        _run(settings, config, FakeApis())
+        cache_path = tmp_path / "open_meteo_cache.json"
+        cache = json.loads(cache_path.read_text())
+        entry = next(iter(cache["entries"].values()))
+        fetched = datetime.now(TZ).replace(hour=3, minute=7, second=0, microsecond=0)
+        entry["fetched_at"] = fetched.timestamp()
+        cache_path.write_text(json.dumps(cache))
+
+        with patch(f"{MODULE}.time.time", return_value=fetched.timestamp() + 60):
+            params = _run(settings, config, self._failed_apis())
+
+        assert params["backup_source"] == "Open-Meteo cache"
+        assert params["updated_at_text"] == "(weather updated 3:07 AM)"
+
+    def test_cached_weather_from_another_day_names_the_day(self, tmp_path):
+        settings = _settings(layout="agenda")
+        config = _device_config(api_key="key")
+        _run(settings, config, FakeApis())
+        cache_path = tmp_path / "open_meteo_cache.json"
+        cache = json.loads(cache_path.read_text())
+        entry = next(iter(cache["entries"].values()))
+        fetched = (datetime.now(TZ) - timedelta(days=1)).replace(hour=21, minute=15, second=0, microsecond=0)
+        entry["fetched_at"] = fetched.timestamp()
+        cache_path.write_text(json.dumps(cache))
+
+        with patch(f"{MODULE}.time.time", return_value=fetched.timestamp() + 60):
+            params = _run(settings, config, self._failed_apis())
+
+        assert params["updated_at_text"] == f"(weather updated {fetched.strftime('%a')} 9:15 PM)"
+
     def test_working_owm_takes_priority_over_the_cache(self):
         settings = _settings()
         config = _device_config(api_key="key")
@@ -322,7 +358,7 @@ class TestOpenMeteoCache:
 
 class TestBackupSourceTemplate:
 
-    def _render_header(self, backup_source, updated_at_text="(updated at 4:33 AM)"):
+    def _render_header(self, backup_source, updated_at_text="(weather updated 4:33 AM)"):
         params = _run(_settings(layout="agenda"), _device_config(api_key="key"), FakeApis())
         params.update(backup_source=backup_source, updated_at_text=updated_at_text)
         plugin = Weather({"id": "weather"})
@@ -333,12 +369,12 @@ class TestBackupSourceTemplate:
     def test_tag_hidden_without_backup_source(self):
         header = self._render_header(backup_source=None)
         assert "wa-backup-tag" not in header
-        assert '<span class="wa-updated-at-text">(updated at 4:33 AM)</span>' in header
+        assert '<span class="wa-updated-at-text">(weather updated 4:33 AM)</span>' in header
 
     def test_tag_follows_updated_at_text(self):
         header = self._render_header(backup_source="OpenWeatherMap")
         assert (
-            '<span class="wa-updated-at-text">(updated at 4:33 AM)</span>'
+            '<span class="wa-updated-at-text">(weather updated 4:33 AM)</span>'
             '<span class="wa-backup-tag">Backup source</span>'
             '<span class="wa-backup-source">OpenWeatherMap</span>'
         ) in header
@@ -395,7 +431,7 @@ class TestLayouts:
         on = _run(_settings(layout="agenda", displayRefreshTime="true"), _device_config(), FakeApis())
         off = _run(_settings(layout="agenda", displayRefreshTime="false"), _device_config(), FakeApis())
 
-        assert on["updated_at_text"].startswith("(updated at ")
+        assert on["updated_at_text"].startswith("(weather updated ")
         assert off["updated_at_text"] == ""
 
 
@@ -495,3 +531,45 @@ class TestCoordinates:
         params = _run(_settings(latitude="0", longitude="0"), _device_config(), FakeApis())
 
         assert params["current_temperature"] == "10"
+
+
+class TestClock:
+
+    @staticmethod
+    def _sunrise(settings, device_format):
+        config = _device_config()
+        defaults = {"timezone": "America/New_York", "time_format": device_format, "orientation": "horizontal"}
+        config.get_config.side_effect = lambda key, default=None: defaults.get(key, default)
+        params = _run(settings, config, FakeApis())
+        return next(dp for dp in params["data_points"] if dp["label"] == "Sunrise")
+
+    def test_follows_the_device_without_a_choice(self):
+        assert self._sunrise(_settings(), "24h")["measurement"] == "07:00"
+        assert self._sunrise(_settings(timeFormat="device"), "12h")["measurement"] == "7:00"
+
+    def test_chosen_clock_overrides_the_device(self):
+        twenty_four = self._sunrise(_settings(timeFormat="24h"), "12h")
+        twelve = self._sunrise(_settings(timeFormat="12h"), "24h")
+
+        assert (twenty_four["measurement"], twenty_four["unit"]) == ("07:00", "")
+        assert (twelve["measurement"], twelve["unit"]) == ("7:00", "AM")
+
+
+class TestEventTimes:
+
+    @pytest.mark.parametrize("start, end, time_format, expected", [
+        ((19, 0), (20, 30), "12h", "7p-8:30p"),
+        ((11, 0), (13, 0), "12h", "11a-1p"),
+        ((9, 15), (10, 0), "12h", "9:15a-10a"),
+        ((19, 0), (20, 30), "24h", "19:00–20:30"),
+    ])
+    def test_ranges_give_am_or_pm_on_both_ends(self, start, end, time_format, expected):
+        start_dt = TZ.localize(datetime(2026, 11, 30, *start))
+        end_str = TZ.localize(datetime(2026, 11, 30, *end)).isoformat()
+
+        assert Weather({"id": "weather"})._format_event_time_range(start_dt, end_str, time_format, TZ) == expected
+
+    def test_event_without_an_end_gives_its_start(self):
+        start_dt = TZ.localize(datetime(2026, 11, 30, 19, 0))
+
+        assert Weather({"id": "weather"})._format_event_time_range(start_dt, None, "12h", TZ) == "7p"

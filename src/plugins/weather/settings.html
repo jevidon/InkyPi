@@ -449,6 +449,20 @@
 
         <div class="ws-row">
             <div class="ws-row-text">
+                <label for="timeFormat" class="ws-row-label">Clock</label>
+                <span class="ws-row-hint">How every time on the screen is written: sunrise and sunset, the hourly chart, the forecast and events.</span>
+            </div>
+            <div class="ws-row-control">
+                <select id="timeFormat" name="timeFormat" class="form-input">
+                    <option value="device">Same as this device</option>
+                    <option value="12h">12-hour (2:30 PM)</option>
+                    <option value="24h">24-hour (14:30)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="ws-row">
+            <div class="ws-row-text">
                 <label for="units" class="ws-row-label">Units</label>
                 <span class="ws-row-hint">Used for temperature, rain and visibility.</span>
             </div>
@@ -496,8 +510,9 @@
 
         <div class="ws-row">
             <div class="ws-row-text">
-                <label for="displayRefreshTime" class="ws-row-label">Last refresh time</label>
-                <span class="ws-row-hint">Shows when the screen last refreshed.</span>
+                <label for="displayRefreshTime" class="ws-row-label">Update time</label>
+                <span class="ws-row-hint" data-layout="classic">Shows when the screen last refreshed.</span>
+                <span class="ws-row-hint" data-layout="agenda">Shows when the weather was last fetched, under the date. If the screen falls back to saved weather, it shows when that weather was fetched.</span>
             </div>
             <div class="ws-row-control">
                 <input type="checkbox" class="ws-switch" id="displayRefreshTime" data-setting="displayRefreshTime" checked>
@@ -984,6 +999,8 @@
                 ? pluginSettings.graphHours : '24';
             document.getElementById('forecastDays').value = pluginSettings.forecastDays || '7';
             document.getElementById('weatherTimeZone').value = pluginSettings.weatherTimeZone || 'locationTimeZone';
+            document.getElementById('timeFormat').value = ['12h', '24h'].includes(pluginSettings.timeFormat)
+                ? pluginSettings.timeFormat : 'device';
 
             settingSwitches().forEach(box => {
                 const saved = pluginSettings[box.dataset.setting];
@@ -1016,6 +1033,7 @@
             document.getElementById('units').value = 'imperial';
             document.getElementById('windUnit').value = defaultWindUnit('imperial', 'classic');
             document.getElementById('weatherTimeZone').value = 'locationTimeZone';
+            document.getElementById('timeFormat').value = 'device';
             addCalendarInput('', '#007BFF');
         }
 

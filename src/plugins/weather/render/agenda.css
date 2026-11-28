@@ -566,15 +566,26 @@
   margin-left: 0.4vw;
 }
 
-/* --- Individual event row --- */
+/* --- A day's events: rows that share their columns, so every title in a card
+       starts after the widest time in it --- */
+.wa-agenda-events {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 0.6vw;
+  row-gap: 0.15dvh;
+  width: 100%;
+  min-width: 0;
+}
+
 .wa-agenda-event {
-  display: flex;
-  flex-direction: row;
+  display: grid;
+  grid-column: 1 / -1;
+  /* Its own columns where subgrid isn't supported; the card's shared ones where it is. */
+  grid-template-columns: max-content minmax(0, 1fr);
+  grid-template-columns: subgrid;
   align-items: baseline;
-  gap: 0.6vw;
   padding: 0.15dvh 0 0.15dvh 0.6vw;
   border-left: 3px solid;
-  width: 100%;
   min-width: 0;
   overflow: hidden;
 }
@@ -582,7 +593,6 @@
 .wa-event-time {
   font-size: min(1.9dvh, 1.8vw);
   white-space: nowrap;
-  flex-shrink: 0;
   opacity: 0.75;
   min-width: 6vw;
 }
@@ -592,7 +602,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1;
   min-width: 0;
 }
 

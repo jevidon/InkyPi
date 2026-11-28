@@ -113,6 +113,9 @@ UNITS = {
     "metric": {"temperature": "°C", "distance": "km"},
     "imperial": {"temperature": "°F", "distance": "mi"},
 }
+# Values of the "timeFormat" setting. Anything else, such as "device", follows the
+# device's own clock setting.
+TIME_FORMATS = ("12h", "24h")
 # Values of the "windUnit" setting.
 WIND_UNITS = ("m/s", "km/h", "mph")
 # Wind unit for instances saved before the setting existed, with metric and standard
@@ -256,7 +259,7 @@ def _load_open_meteo_payload(cache_key):
         return None
     if not isinstance(weather_data, dict) or not isinstance(aqi_data, dict):
         return None
-    return weather_data, aqi_data
+    return weather_data, aqi_data, float(entry["fetched_at"])
 
 
 def _store_open_meteo_payload(cache_key, weather_data, aqi_data):
@@ -330,7 +333,7 @@ class Weather(BasePlugin):
         title = settings.get("customTitle", "")
 
         timezone_name = device_config.get_config("timezone", default="America/New_York")
-        time_format = device_config.get_config("time_format", default="12h")
+        time_format = self._time_format(settings, device_config)
         tz = pytz.timezone(timezone_name)
         # Weather times follow the location's time zone unless the device's is chosen.
         use_location_tz = settings.get("weatherTimeZone", "locationTimeZone") == "locationTimeZone"
@@ -388,7 +391,10 @@ class Weather(BasePlugin):
             template_params["last_refresh_time"] = now.strftime("%Y-%m-%d %I:%M %p")
 
         if layout == LAYOUT_AGENDA:
-            self._add_agenda_params(template_params, settings, tz, time_format, now)
+            # When this weather was fetched: now, unless it came from the cache.
+            fetched_at = template_params.get("weather_fetched_at")
+            weather_time = datetime.fromtimestamp(fetched_at, tz) if fetched_at is not None else now
+            self._add_agenda_params(template_params, settings, tz, time_format, now, weather_time)
 
         dimensions = device_config.get_resolution()
         if device_config.get_config("orientation") == "vertical":
@@ -410,6 +416,14 @@ class Weather(BasePlugin):
             return float(raw_lat), float(raw_long)
         except (ValueError, TypeError):
             raise RuntimeError("Latitude and Longitude must be valid numbers.")
+
+    @staticmethod
+    def _time_format(settings, device_config):
+        """The chosen clock, "12h" or "24h", or the device's when none is chosen."""
+        time_format = settings.get("timeFormat")
+        if time_format in TIME_FORMATS:
+            return time_format
+        return device_config.get_config("time_format", default="12h")
 
     @staticmethod
     def _wind_unit(settings, units, layout):
@@ -456,7 +470,7 @@ class Weather(BasePlugin):
     # Agenda layout
     # ==================================================================
 
-    def _add_agenda_params(self, template_params, settings, tz, time_format, now):
+    def _add_agenda_params(self, template_params, settings, tz, time_format, now, weather_time):
         """Add the calendar days, their forecasts and charts, and the header details."""
         calendar_urls = settings.get("calendarURLs[]", [])
         calendar_colors = settings.get("calendarColors[]", [])
@@ -511,11 +525,13 @@ class Weather(BasePlugin):
         })
         template_params["sun_metrics"] = sun_metrics
 
+        # When the weather was fetched, which can be earlier than this refresh when it
+        # comes from the cache. A time on another day names its day.
         if settings.get("displayRefreshTime") == "true":
-            if time_format == "24h":
-                template_params["updated_at_text"] = now.strftime("(updated at %H:%M)")
-            else:
-                template_params["updated_at_text"] = f"(updated at {now.strftime('%I:%M %p').lstrip('0')})"
+            when = self._format_time(weather_time, time_format)
+            if weather_time.date() != now.date():
+                when = f"{weather_time.strftime('%a')} {when}"
+            template_params["updated_at_text"] = f"(weather updated {when})"
         else:
             template_params["updated_at_text"] = ""
 
@@ -526,10 +542,8 @@ class Weather(BasePlugin):
     def _format_event_time_range(self, start_dt, end_str, time_format, tz):
         """Return a compact start–end time string for agenda display.
 
-        12h rules:
-          - No leading zero on hour; omit :mm when minutes == 0.
-          - Same AM/PM period → suffix only on end  (e.g. 7-8:30a).
-          - Crosses noon      → suffix on both       (e.g. 11a-1p).
+        12h: no leading zero on the hour, :mm only when the minutes aren't zero, and
+        a or p after each time (e.g. 7p-8:30p, 11a-1p).
         24h: HH:MM or HH:MM–HH:MM.
         """
         def _fmt_part(dt):
@@ -561,11 +575,7 @@ class Weather(BasePlugin):
 
         end_part = _fmt_part(end_dt)
         end_period = "a" if end_dt.hour < 12 else "p"
-
-        if start_period == end_period:
-            return f"{start_part}-{end_part}{end_period}"
-        else:
-            return f"{start_part}{start_period}-{end_part}{end_period}"
+        return f"{start_part}{start_period}-{end_part}{end_period}"
 
     def _event_covered_dates(self, start_str, end_str, tz):
         """Return the list of local dates this event occupies (iCal semantics)."""
@@ -761,12 +771,14 @@ class Weather(BasePlugin):
         )
         if payload is None:
             return None
-        weather_data, aqi_data = payload
+        weather_data, aqi_data, fetched_at = payload
         weather_tz = self._open_meteo_timezone(weather_data, tz) if use_location_tz else tz
         try:
-            return self._parse_open_meteo_data(
+            template_params = self._parse_open_meteo_data(
                 weather_data, aqi_data, weather_tz, units, wind_unit, time_format, lat
             )
+            template_params["weather_fetched_at"] = fetched_at
+            return template_params
         except Exception as error:
             logger.warning(f"Cached Open-Meteo data could not be used: {error}")
             return None
@@ -1415,7 +1427,7 @@ class Weather(BasePlugin):
     def _day_outlook(self, codes, wet_hours, time_format):
         """One line on the day's weather from DAY_CHART_START_HOUR to midnight.
 
-        Rain or snow in those hours gives its kind and when, such as "Showers 2–6 PM".
+        Rain or snow in those hours gives its kind and when, such as "Showers 2 PM–6 PM".
         A dry day gives its sky, and the one change in it that best explains the day,
         such as "Fog until 10 AM, then sunny" or "Cloudy, clearing from 1 PM".
         """
@@ -1488,21 +1500,25 @@ class Weather(BasePlugin):
 
     @staticmethod
     def _clock_hour(hour, time_format):
-        """An hour of the day for a sentence: "1 PM", "13:00", or midnight for 24."""
+        """An hour of the day for a sentence: "1 PM", "13:00", or midnight for 24.
+
+        A no-break space keeps the hour and its AM or PM on one line.
+        """
         if hour % 24 == 0 and hour > 0:
             return "midnight"
         if time_format == "24h":
             return f"{hour:02d}:00"
-        return f"{hour % 12 or 12} {'AM' if hour < 12 else 'PM'}"
+        return f"{hour % 12 or 12}\u00a0{'AM' if hour < 12 else 'PM'}"
 
     def _hour_span(self, start, end, time_format):
-        """Hours start to end for a sentence: "2–6 PM", "11 AM–2 PM" or "14:00–18:00"."""
-        if time_format == "24h" or end == 24 or (start < 12) != (end < 12):
-            return f"{self._clock_hour(start, time_format)}–{self._clock_hour(end, time_format)}"
-        return f"{start % 12 or 12}–{end % 12 or 12} {'AM' if start < 12 else 'PM'}"
+        """Hours start to end for a sentence: "2 PM–6 PM", "8 PM–midnight" or "14:00–18:00".
+
+        Word joiners around the dash keep the range on one line.
+        """
+        return f"{self._clock_hour(start, time_format)}\u2060–\u2060{self._clock_hour(end, time_format)}"
 
     def _hour_range(self, start, end, day_date, time_format, tz):
-        """Hours start to end in short form: "2-6p", as event times are written, or "14–18"."""
+        """Hours start to end in short form: "2p-6p", as event times are written, or "14–18"."""
         if time_format == "24h":
             return f"{start:02d}–{end:02d}"
         start_dt = datetime.combine(day_date, time_type(start))

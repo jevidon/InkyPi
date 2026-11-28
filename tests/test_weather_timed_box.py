@@ -28,8 +28,13 @@ def _codes(*spans, default=3):
     return codes
 
 
+def _plain(text):
+    """Text as read: no-break spaces as spaces, word joiners left out."""
+    return text.replace("\u00a0", " ").replace("\u2060", "")
+
+
 def _outlook(codes, wet=(), time_format="12h"):
-    return _plugin()._day_outlook(codes, list(wet), time_format)
+    return _plain(_plugin()._day_outlook(codes, list(wet), time_format))
 
 
 class TestOutlook:
@@ -55,7 +60,7 @@ class TestOutlook:
         assert _outlook(_codes((0, 6, 45), (6, 24, 0))) == "Sunny all day"
 
     @pytest.mark.parametrize("codes, wet, expected", [
-        (_codes((14, 18, 81)), range(14, 18), "Showers 2–6 PM"),
+        (_codes((14, 18, 81)), range(14, 18), "Showers 2 PM–6 PM"),
         (_codes((11, 14, 95)), range(11, 14), "Thunderstorms 11 AM–2 PM"),
         (_codes((20, 24, 73)), range(20, 24), "Snow 8 PM–midnight"),
         (_codes((9, 12, 51)), range(9, 12), "Drizzle 9 AM–12 PM"),
@@ -67,10 +72,15 @@ class TestOutlook:
         assert _outlook(codes, wet) == expected
 
     def test_rain_without_a_rain_code_is_called_rain(self):
-        assert _outlook(_codes(), range(14, 18)) == "Rain 2–6 PM"
+        assert _outlook(_codes(), range(14, 18)) == "Rain 2 PM–6 PM"
 
     def test_rain_only_at_night_leaves_a_dry_outlook(self):
         assert _outlook(_codes((0, 24, 0)), [2, 3]) == "Sunny all day"
+
+    def test_times_and_ranges_do_not_break_across_lines(self):
+        outlook = _plugin()._day_outlook(_codes((14, 18, 81)), list(range(14, 18)), "12h")
+
+        assert outlook == "Showers 2\u00a0PM\u2060–\u20606\u00a0PM"
 
     def test_24_hour_clock(self):
         assert _outlook(_codes((14, 18, 81)), range(14, 18), "24h") == "Showers 14:00–18:00"
@@ -83,11 +93,11 @@ class TestDetails:
 
     def test_rain_gives_the_total_and_when_it_falls(self):
         detail = _plugin()._rain_detail(self.DAY_FORECAST, list(range(14, 18)), DAY, "12h", TZ)
-        assert detail == "5 mm · 2-6p"
+        assert detail == "5 mm · 2p-6p"
 
     def test_rain_too_light_to_total_gives_only_when(self):
         day = dict(self.DAY_FORECAST, rain_amount=None)
-        assert _plugin()._rain_detail(day, [9], DAY, "12h", TZ) == "9-10a"
+        assert _plugin()._rain_detail(day, [9], DAY, "12h", TZ) == "9a-10a"
 
     def test_a_day_without_wet_hours_is_dry_unless_rain_is_likely(self):
         plugin = _plugin()
@@ -147,8 +157,8 @@ class TestDayDetailsFromOpenMeteo:
         rain[15] = 1.2
         details = _plugin()._parse_open_meteo_day_details(_hourly(precipitation=rain), _forecast(), "metric", "12h", TZ)
 
-        assert details["2026-11-30"]["rain"] == "2 mm · 2-3p"
-        assert details["2026-11-30"]["outlook"] == "Rain 2–3 PM"
+        assert details["2026-11-30"]["rain"] == "2 mm · 2p-3p"
+        assert _plain(details["2026-11-30"]["outlook"]) == "Rain 2 PM–3 PM"
 
     def test_rain_below_the_wet_threshold_does_not_count(self):
         rain = [0.05] * 49

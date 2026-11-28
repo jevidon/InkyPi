@@ -184,12 +184,14 @@
                   {% endif %}
                 </div>
                 {% if day_group.events %}
+                <div class="wa-agenda-events">
                   {% for event in day_group.events %}
                   <div class="wa-agenda-event" style="border-left-color: {{ event.color }};">
                     <span class="wa-event-time">{{ event.time }}</span>
                     <span class="wa-event-title">{{ event.title }}</span>
                   </div>
                   {% endfor %}
+                </div>
                 {% else %}
                   <div class="wa-no-events">No events</div>
                 {% endif %}

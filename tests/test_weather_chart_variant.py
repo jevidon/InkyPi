@@ -83,6 +83,28 @@ class TestHourlyFlagReadings:
         assert [h["fog"] for h in hourly] == [True, True, False]
 
 
+class TestChartMidnights:
+
+    def test_parsed_hours_carry_their_clock_hour(self):
+        hourly = _hours(_open_meteo_hourly(26, start="2026-11-27T22:00"))
+
+        assert [h["hour"] for h in hourly[:4]] == [22, 23, 0, 1]
+
+    def test_each_midnight_names_the_day_it_starts(self):
+        hourly = _hours(_open_meteo_hourly(60, start="2026-11-27T22:00"))
+
+        assert Weather._chart_midnights(hourly[:48]) == [{"at": 2, "day": "Sat"}, {"at": 26, "day": "Sun"}]
+
+    def test_a_chart_that_starts_at_midnight_has_no_rule_there(self):
+        hourly = _hours(_open_meteo_hourly(30, start="2026-11-28T00:00"))
+
+        assert Weather._chart_midnights(hourly[:24]) == []
+
+    def test_the_chart_gets_its_midnights(self):
+        # The made-up data starts at midnight and hour 40 is "now": 4 PM the next day.
+        assert _template_params(40)["chart_midnights"] == [{"at": 8, "day": "Sat"}]
+
+
 class TestChartFlags:
 
     def test_calm_mild_hours_raise_no_flags(self):

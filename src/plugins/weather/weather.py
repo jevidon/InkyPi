@@ -401,8 +401,9 @@ class Weather(BasePlugin):
         chart_step = chart_hours // CHART_BARS
         hourly = template_params.get("hourly_forecast", [])
         template_params["hourly_chart"] = self._chart_points(hourly, chart_step)
-        # For the agenda's chart: the hazards over its span, and the hours between its points.
+        # For the agenda's chart: the hours between its points, its midnights and the hazards over its span.
         template_params["chart_step"] = chart_step
+        template_params["chart_midnights"] = self._chart_midnights(hourly[:chart_hours])
         # Up to and including the hour that closes the chart, so a peak named at its last point is flagged too.
         template_params["chart_flags"] = self._chart_flags(hourly[:chart_hours + 1], units, wind_unit)
 
@@ -487,6 +488,19 @@ class Weather(BasePlugin):
                 "precipitation": max(h.get("precipitation") or 0 for h in hours),
             })
         return points
+
+    @staticmethod
+    def _chart_midnights(hourly):
+        """The midnights inside the hourly chart: {"at", "day"} for each.
+
+        `hourly` is one entry per hour of the chart. `at` counts hours from now, and
+        `day` names the day that starts there. A chart that starts at midnight has no
+        rule for it: the rule marks a day that begins partway along.
+        """
+        return [
+            {"at": i, "day": hour.get("day", "")}
+            for i, hour in enumerate(hourly) if i > 0 and hour.get("hour") == 0
+        ]
 
     @staticmethod
     def _chart_flags(hourly, units, wind_unit):
@@ -1180,6 +1194,7 @@ class Weather(BasePlugin):
             hourly.append({
                 "time": self._format_time(dt, time_format, hour_only=True),
                 "day": dt.strftime("%a"),
+                "hour": dt.hour,
                 "temperature": int(hour.get("temp")),
                 "wind_speed": self._hourly_wind(hour.get("wind_speed"), wind_factor),
                 "wind_gust": self._hourly_wind(hour.get("wind_gust"), wind_factor),
@@ -1393,6 +1408,7 @@ class Weather(BasePlugin):
             return {
                 "time": self._format_time(dt, time_format, True),
                 "day": dt.strftime("%a"),
+                "hour": dt.hour,
                 "temperature": int(temperatures[i] + temp_offset) if i < len(temperatures) else 0,
                 "wind_speed": self._hourly_wind(wind_speeds[i] if i < len(wind_speeds) else None),
                 "wind_gust": self._hourly_wind(wind_gusts[i] if i < len(wind_gusts) else None),

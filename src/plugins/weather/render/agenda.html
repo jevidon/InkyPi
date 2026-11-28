@@ -472,6 +472,8 @@ document.addEventListener("DOMContentLoaded", function () {
   const windRaw       = [{% for h in hourly_chart %}{{ h.wind_speed if h.wind_speed is number else 'null' }}{% if not loop.last %}, {% endif %}{% endfor %}];
   const gustRaw       = [{% for h in hourly_chart %}{{ h.wind_gust if h.wind_gust is number else 'null' }}{% if not loop.last %}, {% endif %}{% endfor %}];
   const iconPaths     = [{% for h in hourly_chart %}"{{ h.icon | replace('\\', '/') }}"{% if not loop.last %}, {% endif %}{% endfor %}];
+  // Midnights inside the span: {at, day}, in hours from now, with the day that starts there.
+  const midnights     = {{ (chart_midnights or []) | tojson }};
   // Hazards over the span: {kind, label, start, end}, in hours from now.
   const flags         = {{ (chart_flags or []) | tojson }};
   const stepHours     = {{ chart_step or 1 }};
@@ -491,11 +493,12 @@ document.addEventListener("DOMContentLoaded", function () {
   const showRain      = {{ 'true' if plugin_settings.displayRain == "true" else 'false' }};
   const isNum         = v => typeof v === 'number';
 
-  // Room around the plot. Each row of hazard flags sits above it, and the temperature line keeps
-  // clear of its top and bottom so its highs and lows can be written beside it.
-  const FLAG_ROW = 30, FLAG_ROWS_MAX = 3;
+  // Room around the plot. Each row of hazard flags sits between its floor and the time labels,
+  // and the temperature line keeps clear of its top and bottom so its highs and lows can be
+  // written beside it.
+  const FLAG_H = 24, FLAG_GAP = 5, FLAG_TOP = 6, FLAG_TEXT = 17, FLAG_ROWS_MAX = 3;
   const TOP_ROOM = 32, BOTTOM_ROOM = 26;
-  const flagsHeight = rows => rows ? rows * FLAG_ROW + 4 : 0;
+  const flagsHeight = rows => rows ? FLAG_TOP + rows * (FLAG_H + FLAG_GAP) - FLAG_GAP : 0;
 
   // --- Wind and gusts (optional): a solid wind line and a dashed gust line ---
   const showWind = "{{ plugin_settings.displayGraphWind }}" === "true" && windRaw.some(isNum);
@@ -585,29 +588,34 @@ document.addEventListener("DOMContentLoaded", function () {
     return found.sort((a, b) => a - b);
   }
 
-  // The flags' rows, worked out once the plot has its width: a flag takes the first row that is
-  // free where it starts. Null until then.
+  // The flags' rows, worked out once the plot has its width. A flag is a block under the plot's
+  // floor across the hours it covers, named inside when the name fits and beside it when not.
+  // It takes the first row where its block and name are clear of the flags already there.
+  // Null until then.
   let flagLayout = null;
   function layoutFlags(chart) {
     const points = chart.getDatasetMeta(0).data;
     const slot = points[1].x - points[0].x, xStart = points[0].x, xEnd = points[last].x;
-    const rowEnds = [], placed = [];
+    const rows = [], placed = [];
     ctx.save();
-    ctx.font = '600 18px Jost';
+    ctx.font = `600 ${FLAG_TEXT}px Jost`;
     flags.forEach(flag => {
-      const x0 = xStart + flag.start / stepHours * slot;
       // A flag never runs past the chart; one for its closing hour alone is a stub at the end.
       const x1 = Math.min(xStart + flag.end / stepHours * slot, xEnd);
+      const x0 = Math.min(xStart + flag.start / stepHours * slot, x1 - 6);
       const width = ctx.measureText(flag.label).width;
-      const textX = Math.max(Math.min(x0, xEnd - width), xStart);
+      // The name goes inside the block, or after it, or before it when the chart ends first.
+      const inside = width + 14 <= x1 - x0;
+      const textX = inside ? x0 + 7 : x1 + 7 + width <= xEnd ? x1 + 7 : Math.max(x0 - 7 - width, xStart);
+      const from = Math.min(x0, textX), to = Math.max(x1, textX + width);
       let row = 0;
-      while (rowEnds[row] !== undefined && rowEnds[row] > textX) row++;
+      while (rows[row] && rows[row].some(([a, b]) => from < b + 14 && to > a - 14)) row++;
       if (row >= FLAG_ROWS_MAX) return;
-      rowEnds[row] = Math.max(x1, textX + width) + 20;
-      placed.push({ ...flag, x0, x1, textX, row });
+      (rows[row] = rows[row] || []).push([from, to]);
+      placed.push({ ...flag, x0, x1, textX, inside, row });
     });
     ctx.restore();
-    return { rows: rowEnds.length, placed };
+    return { rows: rows.length, placed };
   }
 
   Chart.register({
@@ -649,6 +657,19 @@ document.addEventListener("DOMContentLoaded", function () {
       }
       ctx.save();
       ctx.setLineDash([]);
+
+      // A thin rule down the plot at each midnight, with the new day named at its top.
+      midnights.forEach(midnight => {
+        const x = Math.round(xs[0] + midnight.at / stepHours * (xs[1] - xs[0])) + 0.5;
+        ctx.strokeStyle = ink;
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(x, area.top); ctx.lineTo(x, area.bottom); ctx.stroke();
+        ctx.font = '600 16px Jost';
+        const width = ctx.measureText(midnight.day).width;
+        if (x + 7 + width > area.right) return;
+        boxes.push([x - 2, area.top, x + 11 + width, area.top + 22]);
+        text(midnight.day, x + 7, area.top + 16, { size: 16, weight: 600, halo: true });
+      });
 
       // Rain: one total per wet spell, over its tallest bar.
       if (showRain) {
@@ -701,15 +722,15 @@ document.addEventListener("DOMContentLoaded", function () {
       });
       marks.forEach(mark => place(mark.label, { size: mark.size, weight: 600 }, spotsAt(mark.x, mark.y, mark.size, mark.above)));
 
-      // Hazard flags above the plot: a bar over the hours each covers, named at its start.
+      // Hazard flags under the plot's floor, right over the time labels: a block across the hours
+      // each covers.
       if (flagLayout) {
-        const top = area.top - flagsHeight(flagLayout.rows);
         flagLayout.placed.forEach(flag => {
-          const y = top + flag.row * FLAG_ROW, color = flagColor[flag.kind] || ink;
-          text(flag.label, flag.textX, y + 17, { size: 18, weight: 600, color });
+          const y = area.bottom + FLAG_TOP + flag.row * (FLAG_H + FLAG_GAP), color = flagColor[flag.kind] || ink;
           ctx.fillStyle = color;
-          const barX = Math.min(flag.x0, flag.x1 - 6);
-          ctx.fillRect(barX, y + 22, flag.x1 - barX, 5);
+          ctx.fillRect(flag.x0, y, flag.x1 - flag.x0, FLAG_H);
+          text(flag.label, flag.textX, y + FLAG_H / 2 + 1,
+            { size: FLAG_TEXT, weight: 600, base: 'middle', color: flag.inside ? paper : color });
         });
       }
       ctx.restore();
@@ -728,7 +749,8 @@ document.addEventListener("DOMContentLoaded", function () {
           const img = new Image();
           img.src = iconPaths[i];
           const xPos = point.x - (iconSize / 2);
-          const yPos = bottom + 25;
+          // Under the time labels, which sit below any flags.
+          const yPos = bottom + 25 + flagsHeight(flagLayout ? flagLayout.rows : 0);
           if (img.complete) ctx.drawImage(img, xPos, yPos, iconSize, iconSize);
           else img.onload = () => ctx.drawImage(img, xPos, yPos, iconSize, iconSize);
         });
@@ -796,10 +818,9 @@ document.addEventListener("DOMContentLoaded", function () {
     options: {
       layout: {
         padding: {
-          // Flags, when there are any, start with one row.
           left: 16,
           right: 16,
-          top: 12 + flagsHeight(flags.length ? 1 : 0),
+          top: 12,
           bottom: showIcons ? 18 : 0
         }
       },
@@ -809,7 +830,8 @@ document.addEventListener("DOMContentLoaded", function () {
       scales: {
         x: {
           ticks: {
-            autoSkip: false, padding: 10,
+            // The gap holds the flags, when there are any; they start with one row.
+            autoSkip: false, padding: 10 + flagsHeight(flags.length ? 1 : 0),
             maxRotation: 0, minRotation: 0,
             color: ink,
             font: { family: 'Jost', size: 14 },
@@ -821,7 +843,10 @@ document.addEventListener("DOMContentLoaded", function () {
             }
           },
           grid: { tickLength: 0, display: false },
-          offset: false
+          offset: false,
+          // Chart.js adds the ticks' padding to the axis's sides as well, which would narrow the
+          // plot whenever flags are shown. The end labels are blank, so the sides need no room.
+          afterFit: scale => { scale.paddingLeft = 0; scale.paddingRight = 0; }
         },
         // The rain bars' own axis: one slot per bar, each filling the gap between two points.
         xBars: {
@@ -866,11 +891,11 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
-  // Flags first: their rows set how much room the plot gives up above it.
+  // Flags first: their rows set how much room the plot gives up below it.
   chart.update();
   if (flags.length) {
     flagLayout = layoutFlags(chart);
-    chart.options.layout.padding.top = 12 + flagsHeight(flagLayout.rows);
+    chart.options.scales.x.ticks.padding = 10 + flagsHeight(flagLayout.rows);
     chart.update();
   }
 

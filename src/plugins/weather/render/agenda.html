@@ -493,7 +493,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Room around the plot. Each row of hazard flags sits above it, and the temperature line keeps
   // clear of its top and bottom so its highs and lows can be written beside it.
-  const FLAG_ROW = 23, FLAG_ROWS_MAX = 3;
+  const FLAG_ROW = 30, FLAG_ROWS_MAX = 3;
   const TOP_ROOM = 32, BOTTOM_ROOM = 26;
   const flagsHeight = rows => rows ? rows * FLAG_ROW + 4 : 0;
 
@@ -543,7 +543,8 @@ document.addEventListener("DOMContentLoaded", function () {
   const tempColor = 'rgb(241, 122, 36)';
   const rainColor = 'rgb(26, 111, 176)';
 
-  const flagColor = { storm: '#c62828', heat: '#c62828', gust: ink, freezing: rainColor, fog: withAlpha(ink, 0.55) };
+  // Solid colours only: on the panel a tint is dithered into dots, which small text does not survive.
+  const flagColor = { storm: '#c62828', heat: '#c62828', gust: ink, freezing: rainColor, fog: ink };
 
   // Rain keeps to the lower 60% of the plot, clear of the temperature labels.
   const rainMax = Math.max(0, ...rain);
@@ -592,7 +593,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const slot = points[1].x - points[0].x, xStart = points[0].x, xEnd = points[last].x;
     const rowEnds = [], placed = [];
     ctx.save();
-    ctx.font = '600 13px Jost';
+    ctx.font = '600 18px Jost';
     flags.forEach(flag => {
       const x0 = xStart + flag.start / stepHours * slot;
       const x1 = Math.min(xStart + flag.end / stepHours * slot, xEnd);
@@ -601,7 +602,7 @@ document.addEventListener("DOMContentLoaded", function () {
       let row = 0;
       while (rowEnds[row] !== undefined && rowEnds[row] > textX) row++;
       if (row >= FLAG_ROWS_MAX) return;
-      rowEnds[row] = Math.max(x1, textX + width) + 16;
+      rowEnds[row] = Math.max(x1, textX + width) + 20;
       placed.push({ ...flag, x0, x1, textX, row });
     });
     ctx.restore();
@@ -688,9 +689,9 @@ document.addEventListener("DOMContentLoaded", function () {
         for (let i = 0; i <= last; i++) if (isNum(peakLine[i]) && (peak < 0 || peakLine[i] > peakLine[peak])) peak = i;
         if (peak >= 0) {
           const yWind = v => chart.scales.yw.getPixelForValue(v);
-          place(`${hasGust ? 'gust' : 'wind'} ${peakLine[peak]} ${windUnit}`, { size: 15, weight: 600, color: withAlpha(ink, 0.75) },
+          place(`${hasGust ? 'gust' : 'wind'} ${peakLine[peak]} ${windUnit}`, { size: 18, weight: 600 },
             width => [0, -1, 1, -2, 2, -3, 3, -4, 4].map(k => peak + k).filter(i => i >= 0 && i <= last && isNum(peakLine[i]))
-              .map(i => ({ x: clamp(xs[i], xLow + width / 2, area.right - width / 2), y: Math.max(yWind(peakLine[i]) - 9, area.top + 16), align: 'center' })));
+              .map(i => ({ x: clamp(xs[i], xLow + width / 2, area.right - width / 2), y: Math.max(yWind(peakLine[i]) - 9, area.top + 19), align: 'center' })));
         }
       }
 
@@ -699,8 +700,8 @@ document.addEventListener("DOMContentLoaded", function () {
       runs(uvIndex.length, i => Math.round(uvIndex[i]) >= 1).forEach(([first, lastPoint]) => {
         const peak = indexOfMax(uvIndex, first, lastPoint);
         if (Math.round(uvIndex[peak]) < 3) return;
-        place(`UV ${Math.round(uvIndex[peak])}`, { size: 15, weight: 600, color: withAlpha(ink, 0.85) }, width => {
-          const x = clamp(xs[peak], xLow + width / 2, area.right - width / 2), y = Math.max(yUv(uvIndex[peak]) - 6, area.top + 16);
+        place(`UV ${Math.round(uvIndex[peak])}`, { size: 18, weight: 600 }, width => {
+          const x = clamp(xs[peak], xLow + width / 2, area.right - width / 2), y = Math.max(yUv(uvIndex[peak]) - 6, area.top + 19);
           return [{ x, y, align: 'center' }, { x: x + width + 14, y: y + 14, align: 'center' }, { x: x - width - 14, y: y + 14, align: 'center' }];
         });
       });
@@ -710,9 +711,9 @@ document.addEventListener("DOMContentLoaded", function () {
         const top = area.top - flagsHeight(flagLayout.rows);
         flagLayout.placed.forEach(flag => {
           const y = top + flag.row * FLAG_ROW, color = flagColor[flag.kind] || ink;
-          text(flag.label, flag.textX, y + 13, { size: 13, weight: 600, color });
+          text(flag.label, flag.textX, y + 17, { size: 18, weight: 600, color });
           ctx.fillStyle = color;
-          ctx.fillRect(flag.x0, y + 17, Math.max(flag.x1 - flag.x0, 6), 4);
+          ctx.fillRect(flag.x0, y + 22, Math.max(flag.x1 - flag.x0, 6), 5);
         });
       }
       ctx.restore();

@@ -403,7 +403,8 @@ class Weather(BasePlugin):
         template_params["hourly_chart"] = self._chart_points(hourly, chart_step)
         # For the agenda's chart: the hazards over its span, and the hours between its points.
         template_params["chart_step"] = chart_step
-        template_params["chart_flags"] = self._chart_flags(hourly[:chart_hours], units, wind_unit)
+        # Up to and including the hour that closes the chart, so a peak named at its last point is flagged too.
+        template_params["chart_flags"] = self._chart_flags(hourly[:chart_hours + 1], units, wind_unit)
 
         now = datetime.now(tz)
         if time_format == "24h":
@@ -491,8 +492,9 @@ class Weather(BasePlugin):
     def _chart_flags(hourly, units, wind_unit):
         """Hazards over the hourly chart, each with the hours from now that it covers.
 
-        `hourly` is one entry per hour of the chart. A flag is {"kind", "label",
-        "start", "end"}: it runs from hour `start` to hour `end`, counted from now.
+        `hourly` is one entry per hour of the chart, the hour that closes it included.
+        A flag is {"kind", "label", "start", "end"}: it runs from hour `start` to hour
+        `end`, counted from now, so one that holds the closing hour ends an hour past the chart.
         Hours of one hazard no more than CHART_FLAG_GAP_HOURS apart share a flag.
         Temperatures are judged as the chart shows them, in whole degrees.
         """

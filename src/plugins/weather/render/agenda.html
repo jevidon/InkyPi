@@ -596,6 +596,7 @@ document.addEventListener("DOMContentLoaded", function () {
     ctx.font = '600 18px Jost';
     flags.forEach(flag => {
       const x0 = xStart + flag.start / stepHours * slot;
+      // A flag never runs past the chart; one for its closing hour alone is a stub at the end.
       const x1 = Math.min(xStart + flag.end / stepHours * slot, xEnd);
       const width = ctx.measureText(flag.label).width;
       const textX = Math.max(Math.min(x0, xEnd - width), xStart);
@@ -713,7 +714,8 @@ document.addEventListener("DOMContentLoaded", function () {
           const y = top + flag.row * FLAG_ROW, color = flagColor[flag.kind] || ink;
           text(flag.label, flag.textX, y + 17, { size: 18, weight: 600, color });
           ctx.fillStyle = color;
-          ctx.fillRect(flag.x0, y + 22, Math.max(flag.x1 - flag.x0, 6), 5);
+          const barX = Math.min(flag.x0, flag.x1 - 6);
+          ctx.fillRect(barX, y + 22, flag.x1 - barX, 5);
         });
       }
       ctx.restore();

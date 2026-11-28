@@ -167,9 +167,12 @@ class _DeviceConfig:
         return (1600, 1200)
 
 
-def _template_params(now_index, **settings):
-    """Run generate_image on made-up Open-Meteo data; return the template params."""
-    hourly = _open_meteo_hourly(120, wind_gusts_10m=[40.0 if h == now_index + 4 else 5.0 for h in range(120)])
+def _template_params(now_index, gust_hour=4, **settings):
+    """Run generate_image on made-up Open-Meteo data; return the template params.
+
+    The data is calm but for one gusty hour, `gust_hour` hours from now.
+    """
+    hourly = _open_meteo_hourly(120, wind_gusts_10m=[40.0 if h == now_index + gust_hour else 5.0 for h in range(120)])
     weather = {"current": {"time": "2026-11-27T06:00", "temperature": 9}, "daily": {}, "hourly": hourly}
     plugin = _plugin()
     captured = {}
@@ -203,7 +206,11 @@ class TestChartParams:
 
         assert params["chart_flags"] == [{"kind": "gust", "label": "Gusts 30+ mph", "start": 4, "end": 5}]
 
-    def test_hazards_beyond_the_span_are_left_out(self):
-        hourly = [_hour()] * 24 + [_hour(fog=True)]
+    def test_a_hazard_in_the_hour_that_closes_the_chart_is_flagged(self):
+        # The chart's last point is that hour, and its peak gust is written there.
+        params = _template_params(40, gust_hour=24)
 
-        assert Weather._chart_flags(hourly[:24], "imperial", "mph") == []
+        assert [(f["kind"], f["start"]) for f in params["chart_flags"]] == [("gust", 24)]
+
+    def test_hazards_beyond_the_chart_are_left_out(self):
+        assert _template_params(40, gust_hour=25)["chart_flags"] == []

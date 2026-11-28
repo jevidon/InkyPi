@@ -696,17 +696,6 @@ document.addEventListener("DOMContentLoaded", function () {
         }
       }
 
-      // Each UV peak of 3 or more, where sun protection starts, is numbered over the hump.
-      const yUv = v => chart.scales.y2.getPixelForValue(Math.min(v, 11));
-      runs(uvIndex.length, i => Math.round(uvIndex[i]) >= 1).forEach(([first, lastPoint]) => {
-        const peak = indexOfMax(uvIndex, first, lastPoint);
-        if (Math.round(uvIndex[peak]) < 3) return;
-        place(`UV ${Math.round(uvIndex[peak])}`, { size: 18, weight: 600 }, width => {
-          const x = clamp(xs[peak], xLow + width / 2, area.right - width / 2), y = Math.max(yUv(uvIndex[peak]) - 6, area.top + 19);
-          return [{ x, y, align: 'center' }, { x: x + width + 14, y: y + 14, align: 'center' }, { x: x - width - 14, y: y + 14, align: 'center' }];
-        });
-      });
-
       // Hazard flags above the plot: a bar over the hours each covers, named at its start.
       if (flagLayout) {
         const top = area.top - flagsHeight(flagLayout.rows);
